@@ -1,0 +1,765 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// 1. TENANT & USERS
+// -------------------------------------------------------------
+
+model Organization {
+  id              String   @id @default(uuid())
+  name            String
+  slug            String   @unique
+  defaultCurrency String   @default("INR") @map("default_currency")
+  timezone        String   @default("Asia/Kolkata")
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  userProfiles         UserProfile[]
+  metaConnections      MetaConnection[]
+  businessPortfolios   BusinessPortfolio[]
+  adAccounts           AdAccount[]
+  clients              Client[]
+  vendors              Vendor[]
+  agencyPools          AgencyPool[]
+  fundLots             FundLot[]
+  financialAccounts    FinancialAccount[]
+  ledgerTransactions   FinancialLedgerTransaction[]
+  alerts               Alert[]
+  auditLogs            AuditLog[]
+  reconciliationSnapshots ReconciliationSnapshot[]
+  webSessions          WebSession[]
+  extensionChallenges  ExtensionPairingChallenge[]
+  extensionDevices     ExtensionDevice[]
+  fundingRequests      FundingRequest[]
+  metaTopupSessions    MetaTopupSession[]
+  metaTopupEvents      MetaTopupEvent[]
+  topupReservations    TopupReservation[]
+
+  @@map("organizations")
+}
+
+model UserProfile {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  authUserId     String   @unique @map("auth_user_id")
+  name           String
+  email          String
+  passwordHash   String?  @map("password_hash")
+  role           String   @default("ADS_MANAGER")
+  status         String   @default("ACTIVE")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  auditLogs         AuditLog[]
+  metaConnections   MetaConnection[]
+  adAccountAccess   UserAdAccountAccess[]
+  portfolioAccess   UserPortfolioAccess[]
+  webSessions       WebSession[]
+  extensionChallenges ExtensionPairingChallenge[]
+  extensionDevices  ExtensionDevice[]
+  createdFundingRequests FundingRequest[] @relation("FundingRequestCreator")
+  approvedFundingRequests FundingRequest[] @relation("FundingRequestApprover")
+  metaTopupSessions MetaTopupSession[] @relation("MetaTopupActor")
+  metaTopupEvents   MetaTopupEvent[] @relation("MetaTopupEventActor")
+
+  @@unique([organizationId, email])
+  @@map("user_profiles")
+}
+
+model WebSession {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  userId         String    @map("user_id")
+  tokenHash      String    @unique @map("token_hash")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastSeenAt     DateTime? @map("last_seen_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         UserProfile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("web_sessions")
+}
+
+model ExtensionPairingChallenge {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  userId         String    @map("user_id")
+  codeHash       String    @unique @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  consumedAt     DateTime? @map("consumed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         UserProfile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("extension_pairing_challenges")
+}
+
+model ExtensionDevice {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  userId         String    @map("user_id")
+  tokenHash      String    @unique @map("token_hash")
+  name           String
+  version        String
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  lastSeenAt     DateTime? @map("last_seen_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         UserProfile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metaTopupSessions MetaTopupSession[]
+  metaTopupEvents   MetaTopupEvent[]
+
+  @@index([userId, expiresAt])
+  @@map("extension_devices")
+}
+
+model UserAdAccountAccess {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  adAccountId    String   @map("ad_account_id")
+  accessRole     String   @default("OWNER") @map("access_role")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user      UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adAccount AdAccount   @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, adAccountId])
+  @@map("user_ad_account_access")
+}
+
+model UserPortfolioAccess {
+  id                  String   @id @default(uuid())
+  organizationId      String   @map("organization_id")
+  userId              String   @map("user_id")
+  businessPortfolioId String   @map("business_portfolio_id")
+  accessRole          String   @default("OWNER") @map("access_role")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user              UserProfile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessPortfolio BusinessPortfolio @relation(fields: [businessPortfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessPortfolioId])
+  @@map("user_portfolio_access")
+}
+
+// -------------------------------------------------------------
+// 2. META ASSET HIERARCHY
+// -------------------------------------------------------------
+
+model MetaConnection {
+  id                   String    @id @default(uuid())
+  organizationId       String    @map("organization_id")
+  userId               String?   @map("user_id")
+  internalName         String    @map("internal_name")
+  externalContextId    String?   @map("external_context_id")
+  tokenSecretReference String?   @map("token_secret_reference")
+  connectionStatus     String    @default("CONNECTED") @map("connection_status")
+  lastSuccessfulSyncAt DateTime? @map("last_successful_sync_at")
+  lastFailedSyncAt     DateTime? @map("last_failed_sync_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                 UserProfile?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  businessPortfolios   BusinessPortfolio[]
+
+  @@map("meta_connections")
+}
+
+model BusinessPortfolio {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  metaConnectionId String   @map("meta_connection_id")
+  metaBusinessId   String   @map("meta_business_id")
+  name             String
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metaConnection   MetaConnection        @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  adAccounts       AdAccount[]
+  userAccess       UserPortfolioAccess[]
+
+  @@unique([organizationId, metaBusinessId])
+  @@map("business_portfolios")
+}
+
+model AdAccount {
+  id                         String    @id @default(uuid())
+  organizationId             String    @map("organization_id")
+  businessPortfolioId        String?   @map("business_portfolio_id")
+  metaAdAccountId            String    @map("meta_ad_account_id")
+  name                       String
+  internalAlias              String?   @map("internal_alias")
+  currencyCode               String    @default("INR") @map("currency_code")
+  timezoneName               String    @default("Asia/Kolkata") @map("timezone_name")
+  rawMetaStatus              String?   @map("raw_meta_status")
+  normalizedStatus           String    @default("ACTIVE") @map("normalized_status")
+  canRunAds                  Boolean   @default(true) @map("can_run_ads")
+  lowBalanceThresholdMinor   BigInt?   @default(500000) @map("low_balance_threshold_minor")
+  currentTrackedBalanceMinor BigInt    @default(0) @map("current_tracked_balance_minor")
+  lastStatusSyncAt           DateTime? @map("last_status_sync_at")
+  lastSpendSyncAt            DateTime? @map("last_spend_sync_at")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+
+  organization       Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businessPortfolio  BusinessPortfolio?       @relation(fields: [businessPortfolioId], references: [id])
+  statusHistory      AdAccountStatusHistory[]
+  metaCampaigns      MetaCampaign[]
+  spendFacts         SpendFact[]
+  jobAllocations     ClientJobAllocation[]
+  fundLots           FundLot[]
+  reconciliationSnapshots ReconciliationSnapshot[]
+  userAccess         UserAdAccountAccess[]
+  targetedFundingRequests FundingRequest[]
+  detectedTopupSessions MetaTopupSession[] @relation("DetectedTopupAccount")
+  selectedTopupSessions MetaTopupSession[] @relation("SelectedTopupAccount")
+
+  @@unique([organizationId, metaAdAccountId])
+  @@map("ad_accounts")
+}
+
+model AdAccountStatusHistory {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  adAccountId    String   @map("ad_account_id")
+  previousStatus String?  @map("previous_status")
+  newStatus      String   @map("new_status")
+  rawMetaStatus  String?  @map("raw_meta_status")
+  sourceType     String   @default("SYNC_JOB") @map("source_type")
+  detectedAt     DateTime @default(now()) @map("detected_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  adAccount      AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@map("ad_account_status_history")
+}
+
+model MetaCampaign {
+  id              String   @id @default(uuid())
+  organizationId  String   @map("organization_id")
+  adAccountId     String   @map("ad_account_id")
+  metaCampaignId  String   @map("meta_campaign_id")
+  name            String
+  rawStatus       String?  @map("raw_status")
+  effectiveStatus String   @default("ACTIVE") @map("effective_status")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  adAccount       AdAccount   @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  spendFacts      SpendFact[]
+
+  @@unique([organizationId, metaCampaignId])
+  @@map("meta_campaigns")
+}
+
+model SpendFact {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  adAccountId    String   @map("ad_account_id")
+  metaCampaignId String?  @map("meta_campaign_id")
+  spendDate      DateTime @map("spend_date")
+  amountMinor    BigInt   @map("amount_minor")
+  currencyCode   String   @default("INR") @map("currency_code")
+  fetchedAt      DateTime @default(now()) @map("fetched_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  adAccount      AdAccount     @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  metaCampaign   MetaCampaign? @relation(fields: [metaCampaignId], references: [id])
+
+  @@map("spend_facts")
+}
+
+// -------------------------------------------------------------
+// 3. CLIENTS & JOBS
+// -------------------------------------------------------------
+
+model Client {
+  id                 String   @id @default(uuid())
+  organizationId     String   @map("organization_id")
+  clientReference    String   @map("client_reference")
+  name               String
+  companyName        String?  @map("company_name")
+  email              String?
+  phone              String?
+  status             String   @default("ACTIVE")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  wallet             ClientWallet?
+  payments           ClientPayment[]
+  jobs               ClientJob[]
+  leftoverBalances   ClientLeftoverBalance[]
+
+  @@unique([organizationId, clientReference])
+  @@map("clients")
+}
+
+model ClientWallet {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  clientId       String   @unique @map("client_id")
+  balanceMinor   BigInt   @default(0) @map("balance_minor")
+  currencyCode   String   @default("INR") @map("currency_code")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  client         Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_wallets")
+}
+
+model ClientPayment {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  clientId         String   @map("client_id")
+  paymentReference String   @map("payment_reference")
+  totalAmountMinor BigInt   @map("total_amount_minor")
+  adsFundMinor     BigInt   @map("ads_fund_minor")
+  serviceFeeMinor  BigInt   @default(0) @map("service_fee_minor")
+  currencyCode     String   @default("INR") @map("currency_code")
+  paymentDate      DateTime @default(now()) @map("payment_date")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  client           Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_payments")
+}
+
+model ClientJob {
+  id                 String   @id @default(uuid())
+  organizationId     String   @map("organization_id")
+  clientId           String   @map("client_id")
+  jobCode            String   @map("job_code")
+  title              String
+  plannedBudgetMinor BigInt   @map("planned_budget_minor")
+  actualSpendMinor   BigInt   @default(0) @map("actual_spend_minor")
+  status             String   @default("ACTIVE")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  client             Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  allocations        ClientJobAllocation[]
+  leftoverBalances   ClientLeftoverBalance[]
+
+  @@unique([organizationId, jobCode])
+  @@map("client_jobs")
+}
+
+model ClientJobAllocation {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  clientJobId    String   @map("client_job_id")
+  adAccountId    String   @map("ad_account_id")
+  allocatedMinor BigInt   @map("allocated_minor")
+  consumedMinor  BigInt   @default(0) @map("consumed_minor")
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  clientJob      ClientJob @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+  adAccount      AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@map("client_job_allocations")
+}
+
+model ClientLeftoverBalance {
+  id               String    @id @default(uuid())
+  organizationId   String    @map("organization_id")
+  clientId         String    @map("client_id")
+  clientJobId      String    @map("client_job_id")
+  amountMinor      BigInt    @map("amount_minor")
+  resolutionAction String?   @map("resolution_action")
+  status           String    @default("UNRESOLVED")
+  resolvedAt       DateTime? @map("resolved_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientJob        ClientJob @relation(fields: [clientJobId], references: [id], onDelete: Cascade)
+
+  @@map("client_leftover_balances")
+}
+
+// -------------------------------------------------------------
+// 4. VENDORS & SETTLEMENTS
+// -------------------------------------------------------------
+
+model Vendor {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  vendorReference  String   @map("vendor_reference")
+  name             String
+  email            String?
+  phone            String?
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fundingBatches   VendorFundingBatch[]
+  repayments       VendorRepayment[]
+  receivables      VendorReceivable[]
+
+  @@unique([organizationId, vendorReference])
+  @@map("vendors")
+}
+
+model VendorFundingBatch {
+  id                   String    @id @default(uuid())
+  organizationId       String    @map("organization_id")
+  vendorId             String    @map("vendor_id")
+  batchCode            String    @map("batch_code")
+  principalAmountMinor BigInt    @map("principal_amount_minor")
+  repaidAmountMinor    BigInt    @default(0) @map("repaid_amount_minor")
+  currencyCode         String    @default("INR") @map("currency_code")
+  status               String    @default("OPEN")
+  receivedDate         DateTime  @default(now()) @map("received_date")
+  repaymentDueDate     DateTime? @map("repayment_due_date")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  vendor               Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  repayments           VendorRepayment[]
+
+  @@unique([organizationId, batchCode])
+  @@map("vendor_funding_batches")
+}
+
+model VendorRepayment {
+  id                   String              @id @default(uuid())
+  organizationId       String              @map("organization_id")
+  vendorId             String              @map("vendor_id")
+  vendorFundingBatchId String?             @map("vendor_funding_batch_id")
+  amountMinor          BigInt              @map("amount_minor")
+  paymentReference     String              @map("payment_reference")
+  currencyCode         String              @default("INR") @map("currency_code")
+  repaidDate           DateTime            @default(now()) @map("repaid_date")
+  notes                String?
+  createdAt            DateTime            @default(now()) @map("created_at")
+
+  vendor               Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  fundingBatch         VendorFundingBatch? @relation(fields: [vendorFundingBatchId], references: [id])
+
+  @@map("vendor_repayments")
+}
+
+model VendorReceivable {
+  id                   String    @id @default(uuid())
+  organizationId       String    @map("organization_id")
+  vendorId             String    @map("vendor_id")
+  amountMinor          BigInt    @map("amount_minor")
+  currencyCode         String    @default("INR") @map("currency_code")
+  reason               String    @default("OVERPAYMENT")
+  status               String    @default("OPEN")
+  resolvedAt           DateTime? @map("resolved_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  vendor               Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_receivables")
+}
+
+// -------------------------------------------------------------
+// 5. FINANCIAL LEDGER & FUND LOTS
+// -------------------------------------------------------------
+
+model AgencyPool {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String   @default("Main Operational Pool")
+  balanceMinor   BigInt   @default(0) @map("balance_minor")
+  currencyCode   String   @default("INR") @map("currency_code")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("agency_pools")
+}
+
+model FundLot {
+  id                  String   @id @default(uuid())
+  organizationId      String   @map("organization_id")
+  lotCode             String   @map("lot_code")
+  ownerType           String   @map("owner_type") // CLIENT, AGENCY, VENDOR
+  ownerId             String   @map("owner_id")
+  initialAmountMinor  BigInt   @map("initial_amount_minor")
+  currentAmountMinor  BigInt   @map("current_amount_minor")
+  status              String   @default("AVAILABLE") // AVAILABLE, ALLOCATED, SPENT, LOCKED, REFUNDED
+  locationAdAccountId String?  @map("location_ad_account_id")
+  currencyCode        String   @default("INR") @map("currency_code")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  locationAdAccount   AdAccount?   @relation(fields: [locationAdAccountId], references: [id])
+  fundingRequests     FundingRequest[]
+  metaTopupSessions   MetaTopupSession[]
+  topupReservations  TopupReservation[]
+
+  @@unique([organizationId, lotCode])
+  @@map("fund_lots")
+}
+
+model FundingRequest {
+  id                String    @id @default(uuid())
+  organizationId    String    @map("organization_id")
+  referenceCode     String    @map("reference_code")
+  createdByUserId   String    @map("created_by_user_id")
+  approvedByUserId  String?   @map("approved_by_user_id")
+  fundLotId         String    @map("fund_lot_id")
+  targetAdAccountId String?   @map("target_ad_account_id")
+  amountMinor       BigInt    @map("amount_minor")
+  currencyCode      String    @default("INR") @map("currency_code")
+  purpose           String
+  status            String    @default("DRAFT")
+  approvedAt        DateTime? @map("approved_at")
+  cancelledAt       DateTime? @map("cancelled_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       UserProfile  @relation("FundingRequestCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  approvedBy      UserProfile? @relation("FundingRequestApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  fundLot         FundLot      @relation(fields: [fundLotId], references: [id], onDelete: Restrict)
+  targetAdAccount AdAccount?   @relation(fields: [targetAdAccountId], references: [id], onDelete: SetNull)
+  topupSessions   MetaTopupSession[]
+  reservations    TopupReservation[]
+
+  @@unique([organizationId, referenceCode])
+  @@index([organizationId, status, createdAt])
+  @@index([fundLotId, status])
+  @@map("funding_requests")
+}
+
+model MetaTopupSession {
+  id                       String    @id @default(uuid())
+  organizationId           String    @map("organization_id")
+  actorUserId              String    @map("actor_user_id")
+  extensionDeviceId        String?   @map("extension_device_id")
+  fundingRequestId         String?   @map("funding_request_id")
+  fundLotId                String    @map("fund_lot_id")
+  detectedAdAccountId      String?   @map("detected_ad_account_id")
+  selectedAdAccountId      String?   @map("selected_ad_account_id")
+  detectedMetaAccountId    String?   @map("detected_meta_account_id")
+  visibleMetaAccountId     String?   @map("visible_meta_account_id")
+  idempotencyKey           String    @map("idempotency_key")
+  idempotencyFingerprint   String    @map("idempotency_fingerprint")
+  detectedAmountMinor      BigInt?   @map("detected_amount_minor")
+  selectedAmountMinor      BigInt?   @map("selected_amount_minor")
+  detectedCurrencyCode     String?   @map("detected_currency_code")
+  selectedCurrencyCode     String    @default("INR") @map("selected_currency_code")
+  fundingSourceType        String    @map("funding_source_type")
+  confidence               String    @default("LOW")
+  operationalState         String    @default("DETECTED") @map("operational_state")
+  financialReviewState     String    @default("UNVERIFIED") @map("financial_review_state")
+  detectorVersion          String    @map("detector_version")
+  uiObservedAt             DateTime? @map("ui_observed_at")
+  reviewedAt               DateTime? @map("reviewed_at")
+  expiresAt                DateTime  @map("expires_at")
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor             UserProfile     @relation("MetaTopupActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  extensionDevice   ExtensionDevice? @relation(fields: [extensionDeviceId], references: [id], onDelete: SetNull)
+  fundingRequest    FundingRequest? @relation(fields: [fundingRequestId], references: [id], onDelete: Restrict)
+  fundLot           FundLot         @relation(fields: [fundLotId], references: [id], onDelete: Restrict)
+  detectedAdAccount AdAccount?      @relation("DetectedTopupAccount", fields: [detectedAdAccountId], references: [id], onDelete: SetNull)
+  selectedAdAccount AdAccount?      @relation("SelectedTopupAccount", fields: [selectedAdAccountId], references: [id], onDelete: SetNull)
+  events            MetaTopupEvent[]
+  reservation       TopupReservation?
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, operationalState, createdAt])
+  @@index([organizationId, financialReviewState, createdAt])
+  @@index([selectedAdAccountId, createdAt])
+  @@map("meta_topup_sessions")
+}
+
+model MetaTopupEvent {
+  id                String   @id @default(uuid())
+  organizationId    String   @map("organization_id")
+  sessionId         String   @map("session_id")
+  actorUserId       String?  @map("actor_user_id")
+  extensionDeviceId String?  @map("extension_device_id")
+  sequence          Int
+  eventType         String   @map("event_type")
+  idempotencyKey    String   @map("idempotency_key")
+  metadataJson      Json?    @map("metadata_json")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  session         MetaTopupSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actor           UserProfile?     @relation("MetaTopupEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  extensionDevice ExtensionDevice? @relation(fields: [extensionDeviceId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, sequence])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, sessionId, createdAt])
+  @@map("meta_topup_events")
+}
+
+model TopupReservation {
+  id               String    @id @default(uuid())
+  organizationId   String    @map("organization_id")
+  sessionId        String    @unique @map("session_id")
+  fundLotId        String    @map("fund_lot_id")
+  fundingRequestId String?   @map("funding_request_id")
+  amountMinor      BigInt    @map("amount_minor")
+  currencyCode     String    @default("INR") @map("currency_code")
+  status           String    @default("ACTIVE")
+  expiresAt        DateTime  @map("expires_at")
+  releasedAt       DateTime? @map("released_at")
+  confirmedAt      DateTime? @map("confirmed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  session        MetaTopupSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  fundLot        FundLot          @relation(fields: [fundLotId], references: [id], onDelete: Restrict)
+  fundingRequest FundingRequest?  @relation(fields: [fundingRequestId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, status, expiresAt])
+  @@index([fundLotId, status, expiresAt])
+  @@map("topup_reservations")
+}
+
+model FinancialAccount {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  accountCode    String   @map("account_code")
+  name           String
+  category       String   // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  currencyCode   String   @default("INR") @map("currency_code")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ledgerEntries  FinancialLedgerEntry[]
+
+  @@unique([organizationId, accountCode])
+  @@map("financial_accounts")
+}
+
+model FinancialLedgerTransaction {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  transactionCode  String   @map("transaction_code")
+  transactionType  String   @map("transaction_type")
+  description      String
+  referenceEntity  String?  @map("reference_entity")
+  referenceId      String?  @map("reference_id")
+  totalAmountMinor BigInt   @map("total_amount_minor")
+  currencyCode     String   @default("INR") @map("currency_code")
+  postedAt         DateTime @default(now()) @map("posted_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entries          FinancialLedgerEntry[]
+
+  @@unique([organizationId, transactionCode])
+  @@map("financial_ledger_transactions")
+}
+
+model FinancialLedgerEntry {
+  id            String   @id @default(uuid())
+  transactionId String   @map("transaction_id")
+  accountId     String   @map("account_id")
+  entryType     String   @map("entry_type") // DEBIT, CREDIT
+  amountMinor   BigInt   @map("amount_minor")
+  currencyCode  String   @default("INR") @map("currency_code")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  transaction   FinancialLedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account       FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("financial_ledger_entries")
+}
+
+// -------------------------------------------------------------
+// 6. SYSTEM, ALERTS & RECONCILIATION
+// -------------------------------------------------------------
+
+model ReconciliationSnapshot {
+  id                       String   @id @default(uuid())
+  organizationId           String   @map("organization_id")
+  adAccountId              String   @map("ad_account_id")
+  snapshotDate             DateTime @default(now()) @map("snapshot_date")
+  metaReportedBalanceMinor BigInt   @map("meta_reported_balance_minor")
+  ledgerBalanceMinor       BigInt   @map("ledger_balance_minor")
+  allocatedLotsSumMinor    BigInt   @map("allocated_lots_sum_minor")
+  varianceMinor            BigInt   @map("variance_minor")
+  status                   String   @default("MATCHED")
+  discrepancyReasons       String[] @map("discrepancy_reasons")
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  adAccount                AdAccount    @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+
+  @@map("reconciliation_snapshots")
+}
+
+model Alert {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  alertType      String   @map("alert_type")
+  title          String
+  description    String
+  severity       String   @default("INFO") // CRITICAL, WARNING, INFO
+  status         String   @default("OPEN") // OPEN, ACKNOWLEDGED, RESOLVED, DISMISSED
+  entityType     String?  @map("entity_type")
+  entityId       String?  @map("entity_id")
+  metadataJson   Json?    @map("metadata_json")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("alerts")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  actorUserId    String?  @map("actor_user_id")
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id")
+  previousState  Json?    @map("previous_state")
+  newState       Json?    @map("new_state")
+  ipAddress      String?  @map("ip_address")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorUser      UserProfile? @relation(fields: [actorUserId], references: [id])
+
+  @@map("audit_logs")
+}

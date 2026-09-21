@@ -1,0 +1,30 @@
+{
+  "name": "ads-control-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Meta Ads Operations & Financial Control System (In-House)",
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "dev": "pnpm --parallel run dev",
+    "dev:api": "pnpm --filter @ads-control/api run dev",
+    "dev:web": "pnpm --filter @ads-control/web run dev",
+    "test": "pnpm --recursive run test",
+    "lint": "pnpm --recursive run lint",
+    "db:generate": "pnpm --filter @ads-control/database run db:generate",
+    "db:push": "pnpm --filter @ads-control/database run db:push",
+    "db:seed": "pnpm --filter @ads-control/database run db:seed"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "rimraf": "^6.0.1"
+  }
+}

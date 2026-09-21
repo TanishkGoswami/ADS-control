@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Ads Control Companion",
+  "version": "1.0.6",
+  "permissions": ["storage", "alarms", "activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "http://localhost:4000/*",
+    "http://127.0.0.1:4000/*",
+    "https://www.facebook.com/*",
+    "https://business.facebook.com/*",
+    "https://adsmanager.facebook.com/*"
+  ],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Ads Control Companion", "default_popup": "popup.html" },
+  "content_scripts": [{
+    "matches": ["https://www.facebook.com/*", "https://business.facebook.com/*", "https://adsmanager.facebook.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": false
+  }]
+}
