@@ -27,15 +27,15 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Meta Assets', href: '/meta', icon: Layers },
+  { name: 'Meta Assets', href: '/meta', icon: Layers, roles: ['ADMIN', 'ADS_MANAGER'] },
   { name: 'Meta Funding', href: '/meta-funding', icon: WalletCards, roles: ['ADMIN', 'FINANCE', 'ADS_MANAGER'] },
+  { name: 'Clients & Wallets', href: '/clients', icon: Users, roles: ['ADMIN', 'FINANCE', 'ADS_MANAGER'] },
   { name: 'Team & Users', href: '/team', icon: UserCog, badge: 'Admin', adminOnly: true },
-  { name: 'Clients & Wallets', href: '/clients', icon: Users, adminOnly: true },
-  { name: 'Vendors & Credit', href: '/vendors', icon: Building2, badge: 'Receivable', adminOnly: true },
-  { name: 'Financial Ledger', href: '/finance', icon: BookOpenCheck, adminOnly: true },
-  { name: 'Reconciliation', href: '/reconciliation', icon: Scale, adminOnly: true },
+  { name: 'Vendors & Credit', href: '/vendors', icon: Building2, badge: 'Receivable', roles: ['ADMIN', 'FINANCE'] },
+  { name: 'Financial Ledger', href: '/finance', icon: BookOpenCheck, roles: ['ADMIN', 'FINANCE'] },
+  { name: 'Reconciliation', href: '/reconciliation', icon: Scale, roles: ['ADMIN', 'FINANCE'] },
   { name: 'Alert Center', href: '/alerts', icon: Bell },
-  { name: 'Audit Trail', href: '/audit', icon: History, adminOnly: true }
+  { name: 'Audit Trail', href: '/audit', icon: History, roles: ['ADMIN', 'FINANCE'] }
 ];
 
 export const Sidebar: React.FC = () => {
@@ -55,13 +55,13 @@ export const Sidebar: React.FC = () => {
           <span className="font-bold text-xs text-[#0a1317]">ADS CONTROL</span>
         </div>
         <span className="text-[10px] font-mono px-1 py-0.2 rounded-none bg-[#f1f4f7] text-[#475569] border border-[#d9e0e8]">
-          {isAdmin ? 'ADMIN' : 'OPERATOR'}
+          {user?.role || 'OPERATOR'}
         </span>
       </div>
 
       <div className="flex-1 py-2 px-1.5 space-y-0.5 overflow-y-auto">
         <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8595a4]">
-          {isAdmin ? 'Agency Operations' : 'Media Buyer Workspace'}
+          {isAdmin ? 'Agency Operations' : user?.role === 'FINANCE' ? 'Finance & Treasury' : 'Media Buyer Workspace'}
         </div>
         {visibleNavItems.map((item) => (
           <NavLink
@@ -110,7 +110,15 @@ export const Sidebar: React.FC = () => {
       <div className="p-2.5 border-t border-[#d9e0e8] bg-[#f5f6f7] text-[10px] font-mono text-[#64748b] space-y-0.5">
         <div className="flex items-center justify-between text-[#0a1317] font-sans font-semibold">
           <span>Role:</span>
-          <span className={isAdmin ? 'text-purple-700 font-bold' : 'text-blue-700 font-bold'}>
+          <span
+            className={
+              isAdmin
+                ? 'text-purple-700 font-bold'
+                : user?.role === 'FINANCE'
+                ? 'text-emerald-700 font-bold'
+                : 'text-blue-700 font-bold'
+            }
+          >
             {user?.role || 'ADS_MANAGER'}
           </span>
         </div>

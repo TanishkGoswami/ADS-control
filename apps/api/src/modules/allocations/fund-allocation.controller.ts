@@ -70,6 +70,21 @@ export class FundAllocationController {
     );
   }
 
+  @Post(':id/adjust')
+  @ApiOperation({ summary: 'Adjust an allocation (Top-up more budget or refund unspent funds to client wallet)' })
+  async adjustAllocation(
+    @CurrentActor() actor: AuthPrincipal,
+    @Param('id') id: string,
+    @Body() body: { action: 'TOP_UP' | 'REFUND'; amountRupees: number }
+  ) {
+    return this.allocationService.adjustAllocation(
+      actor.organizationId,
+      id,
+      body.action,
+      body.amountRupees
+    );
+  }
+
   @Post('accounts/:id/handle-restriction')
   @ApiOperation({ summary: 'Trigger lock state for restricted account' })
   async handleRestriction(

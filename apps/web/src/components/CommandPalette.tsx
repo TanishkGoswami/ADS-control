@@ -15,6 +15,8 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+import { useAuth } from '../features/auth/AuthContext';
+
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
@@ -26,6 +28,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onClose,
   onTriggerSync
 }) => {
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const navigate = useNavigate();
 
@@ -51,16 +54,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   if (!isOpen) return null;
 
-  const navigationItems = [
-    { name: 'Executive Dashboard', path: '/', icon: LayoutDashboard, category: 'Navigation' },
-    { name: 'Meta Assets & Portfolios', path: '/meta', icon: Layers, category: 'Navigation' },
-    { name: 'Client Control & Wallets', path: '/clients', icon: Users, category: 'Navigation' },
-    { name: 'Vendor Credit & Overpayment', path: '/vendors', icon: Building2, category: 'Navigation' },
-    { name: 'Immutable Financial Ledger', path: '/finance', icon: BookOpenCheck, category: 'Navigation' },
-    { name: 'Three-Way Reconciliation', path: '/reconciliation', icon: Scale, category: 'Navigation' },
-    { name: 'Incident & Alert Command', path: '/alerts', icon: Bell, category: 'Navigation' },
-    { name: 'Audit Trail & Event Stream', path: '/audit', icon: History, category: 'Navigation' }
+  const rawNavigationItems = [
+    { name: 'Executive Dashboard', path: '/', icon: LayoutDashboard, category: 'Navigation', roles: ['ADMIN', 'FINANCE', 'ADS_MANAGER'] },
+    { name: 'Meta Assets & Portfolios', path: '/meta', icon: Layers, category: 'Navigation', roles: ['ADMIN', 'ADS_MANAGER'] },
+    { name: 'Client Control & Wallets', path: '/clients', icon: Users, category: 'Navigation', roles: ['ADMIN', 'FINANCE', 'ADS_MANAGER'] },
+    { name: 'Vendor Credit & Overpayment', path: '/vendors', icon: Building2, category: 'Navigation', roles: ['ADMIN', 'FINANCE'] },
+    { name: 'Immutable Financial Ledger', path: '/finance', icon: BookOpenCheck, category: 'Navigation', roles: ['ADMIN', 'FINANCE'] },
+    { name: 'Three-Way Reconciliation', path: '/reconciliation', icon: Scale, category: 'Navigation', roles: ['ADMIN', 'FINANCE'] },
+    { name: 'Incident & Alert Command', path: '/alerts', icon: Bell, category: 'Navigation', roles: ['ADMIN', 'FINANCE', 'ADS_MANAGER'] },
+    { name: 'Audit Trail & Event Stream', path: '/audit', icon: History, category: 'Navigation', roles: ['ADMIN', 'FINANCE'] }
   ];
+
+  const navigationItems = rawNavigationItems.filter(
+    (item) => !item.roles || item.roles.includes(user?.role || '')
+  );
 
   const actionItems = [
     {

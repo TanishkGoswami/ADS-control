@@ -64,12 +64,20 @@ export class ReconciliationService {
 
   async getLatestSnapshots(organizationId?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
-    return this.prisma.reconciliationSnapshot.findMany({
+    const snapshots = await this.prisma.reconciliationSnapshot.findMany({
       where: { organizationId: orgId },
       orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: 100,
       include: { adAccount: true }
     });
+
+    const map = new Map<string, any>();
+    for (const snap of snapshots) {
+      if (!map.has(snap.adAccountId)) {
+        map.set(snap.adAccountId, snap);
+      }
+    }
+    return Array.from(map.values());
   }
 
   async reconcileAdAccount(organizationId: string, adAccountId: string) {

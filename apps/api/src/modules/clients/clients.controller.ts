@@ -13,7 +13,7 @@ export class ClientsController {
   @Get()
   @ApiOperation({ summary: 'List all clients with wallets' })
   async getClients(@CurrentActor() actor: AuthPrincipal) {
-    return this.clientsService.getClients(actor.organizationId);
+    return this.clientsService.getClients(actor.organizationId, actor.userId, actor.role);
   }
 
   @Post()

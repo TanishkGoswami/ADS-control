@@ -39,7 +39,7 @@ export const TeamManagementPage: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADS_MANAGER' | 'ADMIN'>('ALL');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADS_MANAGER' | 'FINANCE' | 'ADMIN'>('ALL');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [selectedUserForAssign, setSelectedUserForAssign] = useState<UserProfileDto | null>(null);
 
@@ -61,7 +61,7 @@ export const TeamManagementPage: React.FC = () => {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [newUserRole, setNewUserRole] = useState<'ADS_MANAGER' | 'ADMIN'>('ADS_MANAGER');
+  const [newUserRole, setNewUserRole] = useState<'ADS_MANAGER' | 'FINANCE' | 'ADMIN'>('ADS_MANAGER');
   const [formError, setFormError] = useState('');
 
   // Queries
@@ -180,6 +180,7 @@ export const TeamManagementPage: React.FC = () => {
   }, [users, searchQuery, roleFilter]);
 
   const mediaBuyersCount = users.filter((u) => u.role === 'ADS_MANAGER').length;
+  const financeCount = users.filter((u) => u.role === 'FINANCE').length;
   const adminsCount = users.filter((u) => u.role === 'ADMIN').length;
 
   return (
@@ -189,14 +190,14 @@ export const TeamManagementPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold text-[#0a1317]">
-              Team & Ads Managers
+              Team & Role Access
             </h1>
             <span className="text-[11px] font-medium px-2 py-0.5 bg-[#f0f2f5] text-[#657383] rounded-full border border-[#e4e6eb]">
               {users.length} members
             </span>
           </div>
           <p className="text-xs text-[#657383] mt-0.5">
-            Manage media buyer roles, Facebook account bindings, and isolated ad account scopes.
+            Manage media buyer roles, finance officers, Facebook account bindings, and isolated scopes.
           </p>
         </div>
 
@@ -206,13 +207,13 @@ export const TeamManagementPage: React.FC = () => {
             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors shrink-0"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>Create Ads Manager</span>
+            <span>Create Team Member</span>
           </button>
         )}
       </div>
 
       {/* Stats Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-[#0064e0] shrink-0">
             <Users className="w-5 h-5" />
@@ -229,22 +230,37 @@ export const TeamManagementPage: React.FC = () => {
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shrink-0">
-            <ShieldCheck className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+            <Shield className="w-5 h-5" />
           </div>
           <div>
             <div className="text-[11px] font-medium text-[#657383] uppercase tracking-wider">
-              Admin Supervisors
+              Finance Officers
             </div>
             <div className="text-lg font-bold text-[#0a1317] flex items-baseline gap-1.5 mt-0.5">
-              <span>{adminsCount}</span>
-              <span className="text-xs font-normal text-[#657383]">Unlimited Visibility</span>
+              <span>{financeCount}</span>
+              <span className="text-xs font-normal text-[#657383]">Ledger & Treasury</span>
             </div>
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[11px] font-medium text-[#657383] uppercase tracking-wider">
+              Super Admins
+            </div>
+            <div className="text-lg font-bold text-[#0a1317] flex items-baseline gap-1.5 mt-0.5">
+              <span>{adminsCount}</span>
+              <span className="text-xs font-normal text-[#657383]">Global Visibility</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 shrink-0">
             <Layers className="w-5 h-5" />
           </div>
           <div>
@@ -276,7 +292,7 @@ export const TeamManagementPage: React.FC = () => {
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <div className="flex items-center gap-1.5 bg-white border border-[#e4e6eb] rounded-lg p-0.5 text-xs font-medium">
-              {(['ALL', 'ADS_MANAGER', 'ADMIN'] as const).map((r) => (
+              {(['ALL', 'ADS_MANAGER', 'FINANCE', 'ADMIN'] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setRoleFilter(r)}
@@ -286,7 +302,7 @@ export const TeamManagementPage: React.FC = () => {
                       : 'text-[#657383] hover:text-[#0a1317] hover:bg-[#f0f2f5]'
                   }`}
                 >
-                  {r === 'ALL' ? 'All Roles' : r === 'ADS_MANAGER' ? 'Ads Managers' : 'Admins'}
+                  {r === 'ALL' ? 'All Roles' : r === 'ADS_MANAGER' ? 'Ads Managers' : r === 'FINANCE' ? 'Finance' : 'Admins'}
                 </button>
               ))}
             </div>
@@ -356,6 +372,11 @@ export const TeamManagementPage: React.FC = () => {
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200/60">
                             <Shield className="w-3 h-3" />
                             <span>Admin</span>
+                          </span>
+                        ) : u.role === 'FINANCE' ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                            <ShieldCheck className="w-3 h-3" />
+                            <span>Finance Controller</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-blue-50 text-[#0064e0] border border-blue-200/60">
@@ -567,10 +588,11 @@ export const TeamManagementPage: React.FC = () => {
                   className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none transition-colors"
                 >
                   <option value="ADS_MANAGER">Ads Manager (Media Buyer - Scoped View)</option>
+                  <option value="FINANCE">Finance (Treasury, Ledger, Vendors & Reconciliation)</option>
                   <option value="ADMIN">Admin (Super Admin - Unlimited View)</option>
                 </select>
                 <p className="text-[11px] text-[#657383] mt-1">
-                  Ads Managers only see their assigned & connected assets. Admins have global visibility across all operators.
+                  Ads Managers only see their assigned & connected assets. Finance has full access to ledgers and treasury. Admins have global control.
                 </p>
               </div>
 

@@ -50,7 +50,12 @@ const AppRoutes: React.FC = () => {
   });
 
   const isAdmin = user?.role === 'ADMIN';
-  const canManageFunding = user?.role === 'ADMIN' || user?.role === 'FINANCE' || user?.role === 'ADS_MANAGER';
+  const isFinance = user?.role === 'FINANCE';
+  const isAdsManager = user?.role === 'ADS_MANAGER';
+  const canAccessFinance = isAdmin || isFinance;
+  const canAccessMetaAssets = isAdmin || isAdsManager;
+  const canManageFunding = isAdmin || isFinance || isAdsManager;
+  const canManageClients = isAdmin || isFinance || isAdsManager;
 
   if (location.pathname.startsWith('/auth/meta/callback')) {
     return <MetaCallbackPage />;
@@ -99,15 +104,15 @@ const AppRoutes: React.FC = () => {
         <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8 max-w-[1260px] w-full mx-auto">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/meta" element={<MetaAssetsPage />} />
+            <Route path="/meta" element={canAccessMetaAssets ? <MetaAssetsPage /> : <Navigate to="/" replace />} />
             <Route path="/meta-funding" element={canManageFunding ? <Suspense fallback={<div className="text-xs text-[#657383] py-8 text-center">Loading Meta funding...</div>}><MetaFundingPage /></Suspense> : <Navigate to="/" replace />} />
             <Route path="/team" element={isAdmin ? <TeamManagementPage /> : <Navigate to="/" replace />} />
-            <Route path="/clients" element={isAdmin ? <ClientsPage /> : <Navigate to="/" replace />} />
-            <Route path="/vendors" element={isAdmin ? <VendorsPage /> : <Navigate to="/" replace />} />
-            <Route path="/finance" element={isAdmin ? <LedgerPage /> : <Navigate to="/" replace />} />
-            <Route path="/reconciliation" element={isAdmin ? <ReconciliationPage /> : <Navigate to="/" replace />} />
+            <Route path="/clients" element={canManageClients ? <ClientsPage /> : <Navigate to="/" replace />} />
+            <Route path="/vendors" element={canAccessFinance ? <VendorsPage /> : <Navigate to="/" replace />} />
+            <Route path="/finance" element={canAccessFinance ? <LedgerPage /> : <Navigate to="/" replace />} />
+            <Route path="/reconciliation" element={canAccessFinance ? <ReconciliationPage /> : <Navigate to="/" replace />} />
             <Route path="/alerts" element={<AlertsPage />} />
-            <Route path="/audit" element={isAdmin ? <AuditPage /> : <Navigate to="/" replace />} />
+            <Route path="/audit" element={canAccessFinance ? <AuditPage /> : <Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

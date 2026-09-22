@@ -206,6 +206,8 @@ export const fetchClients = async (forceRefresh = false): Promise<ClientDto[]> =
             totalLockedMinor: c.totalLockedMinor?.toString() || '0',
             jobsCount: c.jobsCount || 0,
             allocationsCount: c.allocationsCount || 0,
+            jobs: c.jobs || [],
+            payments: c.payments || [],
             createdAt: c.createdAt,
             updatedAt: c.updatedAt
           }));
@@ -256,6 +258,18 @@ export const allocateClientFundBatchApi = async (input: {
   SWRCache.invalidate('meta');
   SWRCache.invalidate('dashboard');
   const res = await apiClient.post('/allocations/allocate-job-batch', input);
+  return res.data;
+};
+
+export const adjustAllocationApi = async (
+  allocationId: string,
+  action: 'TOP_UP' | 'REFUND',
+  amountRupees: number
+) => {
+  SWRCache.invalidate('clients');
+  SWRCache.invalidate('meta');
+  SWRCache.invalidate('dashboard');
+  const res = await apiClient.post(`/allocations/${allocationId}/adjust`, { action, amountRupees });
   return res.data;
 };
 

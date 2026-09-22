@@ -17,7 +17,7 @@ export class CreateUserDto {
   @MinLength(6)
   password!: string;
 
-  @ApiProperty({ example: 'ADS_MANAGER', default: 'ADS_MANAGER', enum: ['ADMIN', 'ADS_MANAGER', 'VIEWER'] })
+  @ApiProperty({ example: 'ADS_MANAGER', default: 'ADS_MANAGER', enum: ['ADMIN', 'FINANCE', 'ADS_MANAGER', 'VIEWER'] })
   @IsOptional()
   @IsString()
   role?: string;

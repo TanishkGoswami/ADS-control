@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../lib/utils';
+import { InfoTooltip } from './InfoTooltip';
 
 interface StatCardProps {
   title: string;
@@ -11,6 +12,8 @@ interface StatCardProps {
   glow?: 'blue' | 'emerald' | 'rose' | 'amber' | 'indigo';
   statusBadge?: string;
   statusColor?: string;
+  infoTooltip?: string;
+  hinglishHelp?: string;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -22,7 +25,9 @@ export const StatCard: React.FC<StatCardProps> = ({
   trendPositive,
   glow = 'blue',
   statusBadge,
-  statusColor
+  statusColor,
+  infoTooltip,
+  hinglishHelp
 }) => {
   const iconBgClasses = {
     blue: 'bg-blue-50 text-[#0064e0]',
@@ -33,10 +38,20 @@ export const StatCard: React.FC<StatCardProps> = ({
   };
 
   return (
-    <div className="bg-white px-3 py-3 transition-colors first:rounded-l-[5px] last:rounded-r-[5px]">
+    <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-sm p-3.5 transition-colors">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[10px] font-bold text-[#64748b] tracking-wider uppercase font-mono">{title}</p>
+          <div className="flex items-center gap-1">
+            <p className="text-[10px] font-bold text-[#64748b] tracking-wider uppercase font-mono">{title}</p>
+            {infoTooltip && (
+              <InfoTooltip
+                title={title}
+                text={infoTooltip}
+                hinglishHelp={hinglishHelp}
+                side="top"
+              />
+            )}
+          </div>
           <h3 className="text-lg font-bold text-[#0a1317] mt-1 font-mono">{value}</h3>
         </div>
         <div className={cn('p-1.5 rounded-[5px]', iconBgClasses[glow])}>

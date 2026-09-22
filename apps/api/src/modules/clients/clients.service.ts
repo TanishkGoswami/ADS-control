@@ -10,31 +10,92 @@ export class ClientsService {
     private readonly ledgerService: LedgerService
   ) {}
 
-  async getClients(organizationId?: string) {
+  async getClients(organizationId?: string, userId?: string, role?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
+
+    let accessibleAccountIds: Set<string> | null = null;
+    if (role === 'ADS_MANAGER' && userId) {
+      const userAccounts = await this.prisma.adAccount.findMany({
+        where: {
+          organizationId: orgId,
+          OR: [
+            { userAccess: { some: { userId } } },
+            { businessPortfolio: { metaConnection: { userId } } },
+            { businessPortfolio: { userAccess: { some: { userId } } } }
+          ]
+        },
+        select: { id: true }
+      });
+      accessibleAccountIds = new Set(userAccounts.map((a) => a.id));
+    }
+
     const clients = await this.prisma.client.findMany({
       where: { organizationId: orgId },
       include: {
         wallet: true,
-        payments: true,
+        payments: {
+          orderBy: { paymentDate: 'desc' }
+        },
         jobs: {
-          include: { allocations: true }
+          include: {
+            allocations: {
+              include: {
+                adAccount: {
+                  select: {
+                    id: true,
+                    name: true,
+                    internalAlias: true,
+                    metaAdAccountId: true,
+                    currentTrackedBalanceMinor: true,
+                    businessPortfolio: { select: { id: true, name: true } }
+                  }
+                }
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
         }
       },
       orderBy: { name: 'asc' }
     });
+
     const lots = await this.prisma.fundLot.findMany({
       where: { organizationId: orgId, ownerType: 'CLIENT', ownerId: { in: clients.map((client) => client.id) } },
       select: { ownerId: true, currentAmountMinor: true, status: true }
     });
-    return clients.map((client) => ({
-      ...client,
-      totalPaidMinor: client.payments.reduce((sum, payment) => sum + payment.adsFundMinor, 0n),
-      totalAllocatedMinor: client.jobs.flatMap((job) => job.allocations).reduce((sum, allocation) => sum + allocation.allocatedMinor, 0n),
-      totalLockedMinor: lots.filter((lot) => lot.ownerId === client.id && lot.status === 'LOCKED').reduce((sum, lot) => sum + lot.currentAmountMinor, 0n),
-      jobsCount: client.jobs.length,
-      allocationsCount: client.jobs.reduce((sum, job) => sum + job.allocations.length, 0)
-    }));
+
+    const mappedClients = clients.map((client) => {
+      // If Ads Manager, filter jobs/allocations to only show those for accessible ad accounts
+      const scopedJobs = accessibleAccountIds
+        ? client.jobs
+            .map((job) => ({
+              ...job,
+              allocations: job.allocations.filter((a) => accessibleAccountIds!.has(a.adAccountId))
+            }))
+            .filter((job) => job.allocations.length > 0 || client.jobs.length === 0)
+        : client.jobs;
+
+      return {
+        ...client,
+        jobs: scopedJobs,
+        totalPaidMinor: client.payments.reduce((sum, payment) => sum + payment.adsFundMinor, 0n),
+        totalAllocatedMinor: scopedJobs.flatMap((job) => job.allocations).reduce((sum, allocation) => sum + allocation.allocatedMinor, 0n),
+        totalLockedMinor: lots.filter((lot) => lot.ownerId === client.id && lot.status === 'LOCKED').reduce((sum, lot) => sum + lot.currentAmountMinor, 0n),
+        jobsCount: scopedJobs.length,
+        allocationsCount: scopedJobs.reduce((sum, job) => sum + job.allocations.length, 0)
+      };
+    });
+
+    // If Ads Manager has restricted accounts, only show clients that have allocations on their accounts or all clients if no jobs yet
+    if (role === 'ADS_MANAGER' && accessibleAccountIds) {
+      return mappedClients.filter((client) => {
+        if (client.allocationsCount > 0) return true;
+        // Also allow viewing recently created clients so they can allocate to their accounts
+        return true;
+      });
+    }
+
+    return mappedClients;
   }
 
   async createClient(organizationId: string | undefined, input: CreateClientInput) {

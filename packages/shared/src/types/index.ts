@@ -111,6 +111,8 @@ export interface ClientDto extends BaseEntity {
   totalLockedMinor: string | bigint;
   jobsCount?: number;
   allocationsCount?: number;
+  jobs?: any[];
+  payments?: any[];
 }
 
 export interface ClientJobDto extends BaseEntity {
@@ -133,10 +135,14 @@ export interface VendorDto extends BaseEntity {
   email?: string;
   phone?: string;
   status: string;
-  totalFundedMinor: string | bigint;
+  totalFundedMinor?: string | bigint;
+  totalPrincipalFundedMinor?: string | bigint;
   totalRepaidMinor: string | bigint;
-  outstandingPayableMinor: string | bigint;
-  outstandingReceivableMinor: string | bigint;
+  outstandingPayableMinor?: string | bigint;
+  outstandingReceivableMinor?: string | bigint;
+  currentBalanceDueMinor?: string | bigint;
+  fundingBatches?: VendorFundingBatchDto[] | any[];
+  receivables?: any[];
 }
 
 export interface VendorFundingBatchDto extends BaseEntity {
@@ -146,10 +152,10 @@ export interface VendorFundingBatchDto extends BaseEntity {
   batchCode: string;
   principalAmountMinor: string | bigint;
   repaidAmountMinor: string | bigint;
-  outstandingBalanceMinor: string | bigint;
+  outstandingBalanceMinor?: string | bigint;
   currencyCode: string;
   status: string;
-  receivedDate: string | Date;
+  receivedDate?: string | Date;
   repaymentDueDate?: string | Date;
 }
 
@@ -172,6 +178,7 @@ export interface FinancialLedgerEntryDto {
   transactionId: string;
   accountId: string;
   accountName?: string;
+  account?: { id?: string; accountCode?: string; name?: string };
   entryType: EntryType;
   amountMinor: string | bigint;
   currencyCode: string;

@@ -21,19 +21,45 @@ async function main() {
 
   console.log(`✓ Organization: ${org.name} (${org.id})`);
 
-  // 2. User Profiles
-  await prisma.userProfile.upsert({
-    where: { authUserId: 'auth-user-admin-01' },
-    update: {},
-    create: {
-      organizationId: org.id,
+  // 2. User Profiles (Admin, Finance, and Ads Lead)
+  const defaultUsers = [
+    {
       authUserId: 'auth-user-admin-01',
       name: 'Operations Lead (Admin)',
-      email: 'admin@metabull.internal',
+      email: 'admin@metabull.com',
       role: 'ADMIN',
       status: 'ACTIVE'
+    },
+    {
+      authUserId: 'auth-user-finance-01',
+      name: 'Finance Controller',
+      email: 'finance@metabull.com',
+      role: 'FINANCE',
+      status: 'ACTIVE'
+    },
+    {
+      authUserId: 'auth-user-adslead-01',
+      name: 'Media Buyer Lead',
+      email: 'adsmanager@metabull.com',
+      role: 'ADS_MANAGER',
+      status: 'ACTIVE'
     }
-  });
+  ];
+
+  for (const user of defaultUsers) {
+    await prisma.userProfile.upsert({
+      where: { authUserId: user.authUserId },
+      update: { role: user.role, name: user.name },
+      create: {
+        organizationId: org.id,
+        authUserId: user.authUserId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status
+      }
+    });
+  }
 
   // 3. Chart of Financial Accounts
   const chartOfAccounts = [

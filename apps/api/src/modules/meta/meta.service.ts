@@ -180,14 +180,12 @@ export class MetaService {
           }
         }
       };
-      if (userId) {
-        const user = await this.prisma.userProfile.findUnique({ where: { id: userId } });
-        if (user && user.role === 'ADS_MANAGER') {
-          whereClause.userAccess = { some: { userId: userId } };
-        } else if (userId !== 'ALL') {
-          // Admin filtering by a specific manager
-          whereClause.userAccess = { some: { userId: userId } };
-        }
+      if (userId && userId !== 'ALL') {
+        whereClause.OR = [
+          { userAccess: { some: { userId } } },
+          { businessPortfolio: { metaConnection: { userId } } },
+          { businessPortfolio: { userAccess: { some: { userId } } } }
+        ];
       }
 
       return this.prisma.adAccount.findMany({

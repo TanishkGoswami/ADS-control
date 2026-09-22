@@ -272,4 +272,112 @@ export class FundAllocationService {
       return { lockedLotsCount: updatedLots.count };
     });
   }
+
+  /**
+   * Adjust an existing allocation:
+   * - TOP_UP: Add more funds from client wallet to the allocation and ad account
+   * - REFUND: Sweep unconsumed allocation funds back to the client wallet
+   */
+  async adjustAllocation(
+    organizationId: string | undefined,
+    allocationId: string,
+    action: 'TOP_UP' | 'REFUND',
+    amountRupees: number
+  ) {
+    const orgId = await this.prisma.resolveOrgId(organizationId);
+    const amountMinor = BigInt(Math.round(amountRupees * 100));
+    if (amountMinor <= 0n) throw new BadRequestException('Amount must be greater than 0');
+
+    return this.prisma.$transaction(async (tx) => {
+      const allocation = await tx.clientJobAllocation.findUnique({
+        where: { id: allocationId },
+        include: { clientJob: true, adAccount: true }
+      });
+      if (!allocation) throw new NotFoundException('Allocation not found');
+      if (allocation.organizationId !== orgId) throw new BadRequestException('Organization mismatch');
+
+      const clientId = allocation.clientJob.clientId;
+      const wallet = await tx.clientWallet.findUnique({ where: { clientId } });
+      if (!wallet) throw new NotFoundException('Client wallet not found');
+
+      if (action === 'TOP_UP') {
+        if (wallet.balanceMinor < amountMinor) {
+          throw new BadRequestException('Insufficient client wallet balance for top up');
+        }
+        // 1. Deduct from client wallet
+        await tx.clientWallet.update({
+          where: { clientId },
+          data: { balanceMinor: { decrement: amountMinor } }
+        });
+        // 2. Increment allocation & job budget
+        await tx.clientJobAllocation.update({
+          where: { id: allocationId },
+          data: { allocatedMinor: { increment: amountMinor } }
+        });
+        await tx.clientJob.update({
+          where: { id: allocation.clientJobId },
+          data: { plannedBudgetMinor: { increment: amountMinor } }
+        });
+        // 3. Create fund lot
+        await tx.fundLot.create({
+          data: {
+            organizationId: orgId,
+            lotCode: `LOT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            ownerType: FundOwnerType.CLIENT,
+            ownerId: clientId,
+            initialAmountMinor: amountMinor,
+            currentAmountMinor: amountMinor,
+            status: MoneyStatus.ALLOCATED,
+            locationAdAccountId: allocation.adAccountId,
+            currencyCode: 'INR'
+          }
+        });
+        // 4. Ledger entry: Dr 2000-CLIENT-WALLETS, Cr 1100-AD-ACCOUNT-PREPAY
+        await this.ledgerService.postTransaction({
+          organizationId: orgId,
+          transactionType: TransactionType.CLIENT_CAMPAIGN_ALLOCATION,
+          description: `Top-up allocation on ${allocation.adAccount.name} for job ${allocation.clientJob.jobCode}`,
+          referenceEntity: 'CLIENT_JOB',
+          referenceId: allocation.clientJobId,
+          entries: [
+            { accountCode: '2000-CLIENT-WALLETS', entryType: EntryType.DEBIT, amountMinor: amountMinor },
+            { accountCode: '1100-AD-ACCOUNT-PREPAY', entryType: EntryType.CREDIT, amountMinor: amountMinor }
+          ]
+        }, tx);
+      } else if (action === 'REFUND') {
+        const unconsumedMinor = allocation.allocatedMinor - allocation.consumedMinor;
+        if (amountMinor > unconsumedMinor) {
+          throw new BadRequestException(`Cannot refund more than unspent allocation amount (₹${Number(unconsumedMinor) / 100})`);
+        }
+        // 1. Increment client wallet
+        await tx.clientWallet.update({
+          where: { clientId },
+          data: { balanceMinor: { increment: amountMinor } }
+        });
+        // 2. Decrement allocation & job budget
+        await tx.clientJobAllocation.update({
+          where: { id: allocationId },
+          data: { allocatedMinor: { decrement: amountMinor } }
+        });
+        await tx.clientJob.update({
+          where: { id: allocation.clientJobId },
+          data: { plannedBudgetMinor: { decrement: amountMinor } }
+        });
+        // 3. Ledger entry: Dr 1100-AD-ACCOUNT-PREPAY, Cr 2000-CLIENT-WALLETS
+        await this.ledgerService.postTransaction({
+          organizationId: orgId,
+          transactionType: TransactionType.CLIENT_LEFTOVER_SWEEP,
+          description: `Refunded unspent allocation on ${allocation.adAccount.name} back to Client Wallet`,
+          referenceEntity: 'CLIENT_JOB',
+          referenceId: allocation.clientJobId,
+          entries: [
+            { accountCode: '1100-AD-ACCOUNT-PREPAY', entryType: EntryType.DEBIT, amountMinor: amountMinor },
+            { accountCode: '2000-CLIENT-WALLETS', entryType: EntryType.CREDIT, amountMinor: amountMinor }
+          ]
+        }, tx);
+      }
+
+      return { success: true, action, amountRupees };
+    }, { timeout: 15000 });
+  }
 }

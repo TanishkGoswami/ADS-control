@@ -1,5 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { Building2, Plus, TrendingUp, DollarSign, AlertTriangle, UserPlus, Download, RefreshCw } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Building2,
+  Plus,
+  TrendingUp,
+  DollarSign,
+  AlertTriangle,
+  UserPlus,
+  Download,
+  RefreshCw,
+  Search,
+  CheckCircle2,
+  Receipt,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Info
+} from 'lucide-react';
 import {
   fetchVendors,
   createVendorApi,
@@ -8,14 +24,30 @@ import {
 } from '../../lib/api';
 import { formatINR, VendorDto } from '@ads-control/shared';
 import { exportToCSV } from '../../lib/export';
+import { InfoTooltip } from '../../components/InfoTooltip';
+import { NotificationModal } from '../../components/ModalDialog';
 
 export const VendorsPage: React.FC = () => {
-  const [vendors, setVendors] = useState<VendorDto[]>([]);
-  const [selectedVendor, setSelectedVendor] = useState<VendorDto | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const queryClient = useQueryClient();
+
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
   const [showOnboardModal, setShowOnboardModal] = useState<boolean>(false);
   const [showBatchModal, setShowBatchModal] = useState<boolean>(false);
   const [showRepaymentModal, setShowRepaymentModal] = useState<boolean>(false);
+
+  const [notification, setNotification] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
 
   // Onboard Vendor State
   const [newVendorName, setNewVendorName] = useState<string>('');
@@ -30,566 +62,747 @@ export const VendorsPage: React.FC = () => {
   // Repayment Form State
   const [repaymentAmount, setRepaymentAmount] = useState<string>('50000');
   const [repaymentRef, setRepaymentRef] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>('');
 
-  const loadVendors = async () => {
-    setIsLoading(true);
-    try {
-      const data = await fetchVendors();
-      setVendors(data);
-      if (data && data.length > 0) {
-        setSelectedVendor((prev) => (prev ? data.find((v) => v.id === prev.id) || data[0] : data[0]));
-      } else {
-        setSelectedVendor(null);
-      }
-    } catch (err) {
-      console.warn('Failed to load vendors:', err);
-    } finally {
-      setIsLoading(false);
+  // Queries (React Query Cached)
+  const {
+    data: vendors = [],
+    isLoading,
+    isFetching,
+    refetch: refetchVendors
+  } = useQuery({
+    queryKey: ['vendors-list'],
+    queryFn: () => fetchVendors(),
+    staleTime: 1000 * 60 * 3
+  });
+
+  // Filtered Vendors
+  const filteredVendors = useMemo(() => {
+    return vendors.filter((v) => {
+      const matchesSearch =
+        searchQuery.trim() === '' ||
+        v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        v.vendorReference.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (v.email && v.email.toLowerCase().includes(searchQuery.toLowerCase()));
+      return matchesSearch;
+    });
+  }, [vendors, searchQuery]);
+
+  // Selected Vendor
+  const selectedVendor = useMemo(() => {
+    if (!vendors.length) return null;
+    if (selectedVendorId) {
+      return vendors.find((v) => v.id === selectedVendorId) || vendors[0];
     }
-  };
+    return vendors[0];
+  }, [vendors, selectedVendorId]);
 
-  useEffect(() => {
-    loadVendors();
-  }, []);
-
-  const handleRecordBatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedVendor) return;
-    setFormError('');
-    setIsSubmitting(true);
-    try {
-      await recordVendorFundingBatchApi({
-        vendorId: selectedVendor.id,
-        batchCode: batchCode || `BATCH-${Date.now().toString().slice(-4)}`,
-        principalAmountRupees: parseFloat(batchPrincipal) || 0
-      });
-      await loadVendors();
-      setShowBatchModal(false);
-      setBatchCode('');
-    } catch (err: any) {
-      setFormError(err?.response?.data?.message || err.message || 'Funding batch could not be created.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRecordRepayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedVendor) return;
-    setFormError('');
-    setIsSubmitting(true);
-    try {
-      await recordVendorRepaymentApi({
-        vendorId: selectedVendor.id,
-        amountRupees: parseFloat(repaymentAmount) || 0,
-        paymentReference: repaymentRef || `REP-${Date.now().toString().slice(-4)}`
-      });
-      await loadVendors();
-      setShowRepaymentModal(false);
-      setRepaymentRef('');
-    } catch (err: any) {
-      setFormError(err?.response?.data?.message || err.message || 'Repayment could not be recorded.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleOnboardVendor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newVendorName.trim()) return;
-    setFormError('');
-    setIsSubmitting(true);
-    try {
-      await createVendorApi({
-        name: newVendorName,
-        vendorReference: newVendorRef || `VEN-${Date.now().toString().slice(-4)}`,
-        email: newVendorEmail,
-        phone: newVendorPhone
-      });
-      await loadVendors();
+  // Mutations
+  const onboardMutation = useMutation({
+    mutationFn: createVendorApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors-list'] });
       setShowOnboardModal(false);
       setNewVendorName('');
       setNewVendorRef('');
       setNewVendorEmail('');
       setNewVendorPhone('');
-    } catch (err: any) {
+      setFormError('');
+      setNotification({
+        isOpen: true,
+        title: 'Vendor Created',
+        message: 'New vendor successfully registered in the system.',
+        type: 'success'
+      });
+    },
+    onError: (err: any) => {
       setFormError(err?.response?.data?.message || err.message || 'Vendor could not be created.');
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  });
+
+  const batchMutation = useMutation({
+    mutationFn: recordVendorFundingBatchApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors-list'] });
+      queryClient.invalidateQueries({ queryKey: ['ledger-transactions'] });
+      setShowBatchModal(false);
+      setBatchCode('');
+      setBatchPrincipal('100000');
+      setFormError('');
+      setNotification({
+        isOpen: true,
+        title: 'Funding Batch Recorded',
+        message: 'Vendor funding batch recorded and credited to company bank.',
+        type: 'success'
+      });
+    },
+    onError: (err: any) => {
+      setFormError(err?.response?.data?.message || err.message || 'Funding batch could not be created.');
+    }
+  });
+
+  const repaymentMutation = useMutation({
+    mutationFn: recordVendorRepaymentApi,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors-list'] });
+      queryClient.invalidateQueries({ queryKey: ['ledger-transactions'] });
+      setShowRepaymentModal(false);
+      setRepaymentRef('');
+      setFormError('');
+      setNotification({
+        isOpen: true,
+        title: 'Repayment Recorded',
+        message: 'Vendor repayment recorded successfully and liability reduced.',
+        type: 'success'
+      });
+    },
+    onError: (err: any) => {
+      setFormError(err?.response?.data?.message || err.message || 'Repayment could not be recorded.');
+    }
+  });
 
   const handleExportVendors = () => {
     exportToCSV(
-      vendors.map((v) => ({
+      filteredVendors.map((v) => ({
         VendorRef: v.vendorReference,
         Name: v.name,
-        Email: v.email,
-        Phone: v.phone,
-        TotalFunded: Number(v.totalFundedMinor) / 100,
-        TotalRepaid: Number(v.totalRepaidMinor) / 100,
-        OutstandingPayable: Number(v.outstandingPayableMinor) / 100,
-        ReceivableAsset: Number(v.outstandingReceivableMinor) / 100,
-        Status: v.status
+        Email: v.email || '',
+        Phone: v.phone || '',
+        TotalPrincipal: Number(v.totalPrincipalFundedMinor || 0) / 100,
+        TotalRepaid: Number(v.totalRepaidMinor || 0) / 100,
+        BalanceDue: Number(v.currentBalanceDueMinor || 0) / 100
       })),
-      'vendors_ledger_report'
+      'vendor_credit_report'
     );
   };
 
-  const hasReceivable = selectedVendor ? BigInt(selectedVendor.outstandingReceivableMinor) > 0n : false;
-
   return (
-    <div className="space-y-3 pb-8">
-      {formError && <div role="alert" className="fixed right-4 top-16 z-[70] max-w-sm border border-rose-200 bg-white px-3 py-2 text-xs text-rose-700 shadow-lg"><div className="flex items-start justify-between gap-3"><span>{formError}</span><button type="button" onClick={() => setFormError('')} aria-label="Dismiss error">×</button></div></div>}
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+    <div className="space-y-4 pb-8 font-sans">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-base font-bold text-[#0a1317] tracking-tight flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-[#0064e0]" />
-            <span>Vendor Credit & Overpayment Control</span>
-          </h1>
-          <p className="text-[11px] text-[#64748b] mt-0.5">
-            Vendor funding batches, credit repayments, and automatic overpayment receivables.
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-bold text-[#0a1317] tracking-tight flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-[#0064e0]" />
+              <span>Vendor Credit & Overpayment Control</span>
+            </h1>
+            <InfoTooltip
+              title="Vendor Credit & Funding"
+              text="Tracks vendor funding batches, credit repayments, and automatically prevents overpayment liabilities."
+              hinglishHelp="Vendors se funding lene aur unhe wapas repay karne ka pura ledger record yahan manage hota hai."
+              side="bottom"
+            />
+          </div>
+          <p className="text-xs text-[#64748b] mt-0.5">
+            Vendor funding batches, credit repayments, and automatic overpayment protection.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={loadVendors}
-            disabled={isLoading}
-            className="meta-btn-ghost flex items-center gap-1.5"
+            onClick={() => refetchVendors()}
+            disabled={isFetching}
+            className="px-2.5 py-1.5 bg-white hover:bg-[#f0f2f5] border border-[#e4e6eb] rounded-lg text-xs font-medium text-[#0a1317] transition-colors flex items-center gap-1.5 shadow-xs"
             title="Refresh vendors"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#64748b] ${isFetching ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
 
           <button
             onClick={handleExportVendors}
-            disabled={vendors.length === 0}
-            className="meta-btn-ghost flex items-center gap-1.5"
-            title="Export vendors list to CSV"
+            disabled={filteredVendors.length === 0}
+            className="px-2.5 py-1.5 bg-white hover:bg-[#f0f2f5] border border-[#e4e6eb] rounded-lg text-xs font-medium text-[#0a1317] transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+            title="Export vendor report to CSV"
           >
             <Download className="w-3.5 h-3.5 text-[#64748b]" />
             <span>Export CSV</span>
           </button>
 
           <button
-            onClick={() => setShowOnboardModal(true)}
-            className="meta-btn-secondary flex items-center gap-1.5"
+            onClick={() => {
+              setFormError('');
+              setShowOnboardModal(true);
+            }}
+            className="px-3 py-1.5 bg-white hover:bg-[#f0f2f5] border border-[#e4e6eb] rounded-lg text-xs font-semibold text-[#0a1317] transition-colors flex items-center gap-1.5 shadow-xs"
           >
-            <UserPlus className="w-3.5 h-3.5" />
+            <UserPlus className="w-3.5 h-3.5 text-[#0064e0]" />
             <span>Onboard Vendor</span>
           </button>
 
-          {selectedVendor && (
-            <button
-              onClick={() => setShowBatchModal(true)}
-              className="meta-btn-buy flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Record Batch</span>
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setFormError('');
+              setShowBatchModal(true);
+            }}
+            className="px-3 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Record Batch</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Layout: Vendors List & Selected Breakdown */}
-      {isLoading ? (
-        <div className="p-8 text-center bg-white border border-[#d9e0e8] rounded-none text-xs text-[#64748b] font-mono">
-          Loading vendor credit lines & funding batches...
-        </div>
-      ) : vendors.length === 0 ? (
-        <div className="p-8 text-center bg-white border border-[#d9e0e8] rounded-none space-y-3">
-          <div className="text-xs font-bold text-[#0a1317]">No vendors recorded yet</div>
-          <p className="text-[11px] text-[#64748b] max-w-sm mx-auto">
-            Click "Onboard Vendor" above to register third-party lenders or agency capital sources.
-          </p>
-          <button
-            onClick={() => setShowOnboardModal(true)}
-            className="meta-btn-buy text-xs"
-          >
-            + Onboard First Vendor
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Left Column: Vendor List */}
-          <div className="rounded-none bg-white border border-[#d9e0e8] p-2.5 space-y-2">
-            <div className="px-1 text-[10px] font-bold uppercase tracking-wider text-[#94a3b8] font-mono">
-              Active Vendors ({vendors.length})
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Left 1 Col: Active Vendors List */}
+        <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-sm flex flex-col overflow-hidden">
+          {/* Search bar */}
+          <div className="p-3 border-b border-[#e4e6eb] bg-[#fafbfc]">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
+              <input
+                type="text"
+                placeholder="Search vendor name or ref..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#e4e6eb] rounded-lg text-xs text-[#0a1317] placeholder-[#94a3b8] focus:outline-none focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] transition-colors"
+              />
+            </div>
+          </div>
+
+          <div className="p-3 flex-1 overflow-y-auto max-h-[520px] space-y-2">
+            <div className="text-[11px] font-bold text-[#8595a4] uppercase tracking-wider px-1">
+              Active Vendors ({filteredVendors.length})
             </div>
 
-            <div className="space-y-1.5">
-              {vendors.map((vendor) => {
-                const isSelected = selectedVendor?.id === vendor.id;
-                const isRec = BigInt(vendor.outstandingReceivableMinor) > 0n;
+            {isLoading ? (
+              <div className="p-8 text-center text-xs text-[#657383]">
+                <div className="w-6 h-6 border-2 border-[#0064e0] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                Loading vendors...
+              </div>
+            ) : filteredVendors.length === 0 ? (
+              <div className="p-8 text-center text-xs text-[#657383]">
+                No vendors found. Click "Onboard Vendor" to register a vendor.
+              </div>
+            ) : (
+              filteredVendors.map((v) => {
+                const isSelected = selectedVendor?.id === v.id;
+                const balanceDue = BigInt(v.currentBalanceDueMinor || 0);
+
                 return (
                   <div
-                    key={vendor.id}
-                    onClick={() => setSelectedVendor(vendor)}
-                    className={`p-2.5 rounded-none border transition-colors cursor-pointer text-xs ${
+                    key={v.id}
+                    onClick={() => setSelectedVendorId(v.id)}
+                    className={`p-3 rounded-lg border transition-all cursor-pointer space-y-1.5 ${
                       isSelected
-                        ? 'bg-[#f1f4f7] border-[#0a1317]'
-                        : 'bg-white border-[#d9e0e8] hover:border-[#cbd5e1]'
+                        ? 'bg-blue-50/50 border-[#0064e0] shadow-xs'
+                        : 'bg-white border-[#e4e6eb] hover:border-[#cbd5e1] hover:bg-[#fafbfc]'
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] font-mono text-[#0064e0] font-bold">{vendor.vendorReference}</span>
-                        <h4 className="text-xs font-bold text-[#0a1317]">{vendor.name}</h4>
-                        <p className="text-[11px] text-[#64748b]">{vendor.phone || vendor.email}</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-50 text-[#0064e0] border border-blue-200 font-bold shrink-0">
+                          {v.vendorReference}
+                        </span>
+                        <span className="font-semibold text-xs text-[#0a1317] truncate">
+                          {v.name}
+                        </span>
                       </div>
-                      {isRec ? (
-                        <span className="meta-badge-success">
-                          RECEIVABLE
-                        </span>
-                      ) : (
-                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded-none bg-[#f1f4f7] text-[#475569] border border-[#d9e0e8]">
-                          PAYABLE
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-2 pt-2 border-t border-[#eef1f4] flex items-center justify-between text-[11px]">
-                      <span className="text-[#94a3b8]">
-                        {isRec ? 'Company Due:' : 'To Repay:'}
-                      </span>
                       <span
-                        className={`font-mono font-bold ${
-                          isRec ? 'text-emerald-700' : 'text-amber-700'
+                        className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                          balanceDue > 0n
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         }`}
                       >
-                        {isRec
-                          ? formatINR(vendor.outstandingReceivableMinor)
-                          : formatINR(vendor.outstandingPayableMinor)}
+                        {balanceDue > 0n ? 'PAYABLE' : 'CLEARED'}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-[#657383] truncate">
+                      {v.email || v.phone || 'No contact specified'}
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-[#f0f2f5] font-mono">
+                      <span className="text-[#8595a4] text-[11px]">To Repay:</span>
+                      <span className="font-bold text-[#0a1317]">
+                        {formatINR(v.currentBalanceDueMinor || 0)}
                       </span>
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              })
+            )}
           </div>
+        </div>
 
-          {/* Right Column: Detailed Vendor Ledger & Batches */}
-          {selectedVendor && (
-            <div className="lg:col-span-2 rounded-none bg-white border border-[#d9e0e8] p-3 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-none bg-[#f5f6f7] border border-[#d9e0e8]">
+        {/* Right 2 Cols: Vendor Overview, Stats & Batches Ledger */}
+        <div className="lg:col-span-2 space-y-3">
+          {selectedVendor ? (
+            <>
+              {/* Top Banner Card */}
+              <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-none bg-blue-50 text-[#0064e0] border border-blue-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0064e0] border border-blue-200">
                       {selectedVendor.vendorReference}
                     </span>
-                    <h2 className="text-sm font-bold text-[#0a1317]">{selectedVendor.name}</h2>
+                    <h2 className="text-base font-bold text-[#0a1317]">{selectedVendor.name}</h2>
                   </div>
-                  <p className="text-[11px] text-[#64748b] mt-0.5">
+                  <p className="text-xs text-[#657383] mt-1">
                     {selectedVendor.email || 'No email'} • {selectedVendor.phone || 'No phone'}
                   </p>
                 </div>
 
-                <button
-                  onClick={() => setShowRepaymentModal(true)}
-                  className="meta-btn-buy text-xs self-start sm:self-auto"
-                >
-                  Record Repayment
-                </button>
-              </div>
-
-              {/* Overpayment Warning Banner */}
-              {hasReceivable && (
-                <div className="p-2.5 rounded-none bg-emerald-50 border border-emerald-200 flex items-start gap-2">
-                  <TrendingUp className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="text-[11px] font-bold text-emerald-900 uppercase font-mono">
-                      Overpayment Receivable Active
-                    </h4>
-                    <p className="text-[11px] text-emerald-800 leading-tight mt-0.5">
-                      Repayment exceeded batch principal by <span className="font-mono font-bold">{formatINR(selectedVendor.outstandingReceivableMinor)}</span>. Locked as open company asset.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Stats Breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="p-2.5 rounded-none bg-white border border-[#d9e0e8]">
-                  <div className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider font-mono">Total Principal</div>
-                  <div className="text-base font-bold font-mono text-[#0a1317] mt-1">
-                    {formatINR(selectedVendor.totalFundedMinor)}
-                  </div>
-                </div>
-                <div className="p-2.5 rounded-none bg-white border border-[#d9e0e8]">
-                  <div className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider font-mono">Total Repaid</div>
-                  <div className="text-base font-bold font-mono text-[#0064e0] mt-1">
-                    {formatINR(selectedVendor.totalRepaidMinor)}
-                  </div>
-                </div>
-                <div className="p-2.5 rounded-none bg-white border border-[#d9e0e8]">
-                  <div className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider font-mono">
-                    {hasReceivable ? 'Receivable Asset' : 'Balance Due'}
-                  </div>
-                  <div
-                    className={`text-base font-bold font-mono mt-1 ${
-                      hasReceivable ? 'text-emerald-700' : 'text-amber-700'
-                    }`}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setFormError('');
+                      setShowRepaymentModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
                   >
-                    {hasReceivable
-                      ? formatINR(selectedVendor.outstandingReceivableMinor)
-                      : formatINR(selectedVendor.outstandingPayableMinor)}
+                    <ArrowDownLeft className="w-3.5 h-3.5" />
+                    <span>Record Repayment</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 3 Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#657383] uppercase tracking-wider">
+                      Total Principal
+                    </span>
+                    <InfoTooltip
+                      title="Total Principal Funded"
+                      text="Cumulative funds received from this vendor across all batches."
+                      hinglishHelp="Vendor se liya gaya total principal funding amount."
+                      side="top"
+                    />
+                  </div>
+                  <div className="text-lg font-bold font-mono text-[#0a1317]">
+                    {formatINR(selectedVendor.totalPrincipalFundedMinor || 0)}
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#657383] uppercase tracking-wider">
+                      Total Repaid
+                    </span>
+                    <InfoTooltip
+                      title="Total Repayments"
+                      text="Total amount paid back to this vendor to date."
+                      hinglishHelp="Vendor ko wapas pay kiya gaya total amount."
+                      side="top"
+                    />
+                  </div>
+                  <div className="text-lg font-bold font-mono text-emerald-700">
+                    {formatINR(selectedVendor.totalRepaidMinor || 0)}
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#657383] uppercase tracking-wider">
+                      Balance Due
+                    </span>
+                    <InfoTooltip
+                      title="Current Balance Due"
+                      text="Outstanding liability remaining to be repaid to the vendor."
+                      hinglishHelp="Bacha hua amount jo vendor ko repay karna baaki hai."
+                      side="top"
+                      align="end"
+                    />
+                  </div>
+                  <div className="text-lg font-bold font-mono text-amber-700">
+                    {formatINR(selectedVendor.currentBalanceDueMinor || 0)}
                   </div>
                 </div>
               </div>
+
+              {/* Funding Batches Table Card */}
+              <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-sm overflow-hidden">
+                <div className="p-3 border-b border-[#e4e6eb] bg-[#fafbfc] flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Receipt className="w-4 h-4 text-[#0064e0]" />
+                    <h3 className="text-xs font-bold text-[#0a1317] uppercase tracking-wider">
+                      Vendor Funding Batches & Repayments
+                    </h3>
+                  </div>
+                  <span className="text-[11px] text-[#657383] font-mono">
+                    {selectedVendor.fundingBatches?.length || 0} Batches Recorded
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#f8fafc] text-[#657383] font-semibold text-[11px] uppercase tracking-wider border-b border-[#e4e6eb]">
+                      <tr>
+                        <th className="px-4 py-3">Batch Code</th>
+                        <th className="px-4 py-3 text-right">Principal</th>
+                        <th className="px-4 py-3 text-right">Repaid</th>
+                        <th className="px-4 py-3 text-right">Outstanding</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#f0f2f5] font-mono text-xs">
+                      {!selectedVendor.fundingBatches || selectedVendor.fundingBatches.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-xs text-[#8595a4] font-sans">
+                            No funding batches recorded for this vendor yet. Click "Record Batch" to fund.
+                          </td>
+                        </tr>
+                      ) : (
+                        selectedVendor.fundingBatches.map((b: any) => {
+                          const outstanding = BigInt(b.principalAmountMinor) - BigInt(b.repaidAmountMinor || 0);
+                          const isCleared = outstanding <= 0n;
+
+                          return (
+                            <tr key={b.id} className="hover:bg-[#f8fafc]/80 transition-colors">
+                              <td className="px-4 py-3 font-semibold text-[#0a1317]">
+                                <div>{b.batchCode}</div>
+                                <div className="text-[10px] text-[#8595a4] font-normal font-sans">
+                                  {new Date(b.createdAt).toLocaleDateString()}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right font-bold text-[#0a1317]">
+                                {formatINR(b.principalAmountMinor)}
+                              </td>
+                              <td className="px-4 py-3 text-right text-emerald-700 font-bold">
+                                {formatINR(b.repaidAmountMinor || 0)}
+                              </td>
+                              <td className="px-4 py-3 text-right text-amber-700 font-bold">
+                                {formatINR(outstanding)}
+                              </td>
+                              <td className="px-4 py-3 text-center font-sans">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
+                                    isCleared
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}
+                                >
+                                  {isCleared ? 'CLEARED' : 'ACTIVE'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-sm p-12 text-center text-xs text-[#657383]">
+              Select a vendor from the list to view balances, funding batches, and record repayments.
             </div>
           )}
         </div>
-      )}
+      </div>
 
-      {/* Record Funding Batch Modal */}
-      {showBatchModal && selectedVendor && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-3">
-          <form
-            onSubmit={handleRecordBatch}
-            className="bg-white w-full max-w-sm rounded-none p-4 border border-[#d9e0e8] shadow-xl space-y-3"
-          >
-            <div className="flex items-center justify-between border-b border-[#d9e0e8] pb-2">
-              <div className="flex items-center gap-1.5 text-[#0a1317] font-bold text-xs">
-                <Plus className="w-4 h-4 text-[#0064e0]" />
-                <span>Record Vendor Funding Batch</span>
+      {/* Modal: Onboard Vendor */}
+      {showOnboardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-[#e4e6eb] bg-[#fafbfc] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-[#0064e0]" />
+                <h3 className="text-sm font-semibold text-[#0a1317]">Onboard New Vendor</h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowBatchModal(false)}
-                className="text-[#94a3b8] hover:text-[#0a1317] text-xs font-bold"
-              >
-                ✕
-              </button>
+              <InfoTooltip
+                title="Vendor Onboarding"
+                text="Register a funding partner / vendor from whom the agency receives credit lines."
+                hinglishHelp="Naya vendor add karein jisse agency funding aur cards receive karti hai."
+                side="bottom"
+              />
             </div>
 
-            <div className="space-y-2.5 text-xs">
-              <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Vendor</label>
-                <div className="p-2 rounded-none bg-[#f5f6f7] border border-[#d9e0e8] font-semibold text-[#0a1317]">
-                  {selectedVendor.name}
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Batch Code</label>
-                <input
-                  type="text"
-                  value={batchCode}
-                  onChange={(e) => setBatchCode(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] font-mono text-xs"
-                  placeholder="BATCH-RAM-2026-Q3"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Principal Capital (₹)</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={batchPrincipal}
-                  onChange={(e) => setBatchPrincipal(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] font-mono text-xs"
-                  placeholder="100000"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#d9e0e8]">
-              <button
-                type="button"
-                onClick={() => setShowBatchModal(false)}
-                className="meta-btn-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="meta-btn-buy"
-              >
-                {isSubmitting ? 'Posting...' : 'Create Batch & Post Dr/Cr'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Record Repayment Modal */}
-      {showRepaymentModal && selectedVendor && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-3">
-          <form
-            onSubmit={handleRecordRepayment}
-            className="bg-white w-full max-w-sm rounded-none p-4 border border-[#d9e0e8] shadow-xl space-y-3"
-          >
-            <div className="flex items-center justify-between border-b border-[#d9e0e8] pb-2">
-              <div className="flex items-center gap-1.5 text-[#0a1317] font-bold text-xs">
-                <DollarSign className="w-4 h-4 text-[#0064e0]" />
-                <span>Record Vendor Repayment</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRepaymentModal(false)}
-                className="text-[#94a3b8] hover:text-[#0a1317] text-xs font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-2.5 text-xs">
-              <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Vendor</label>
-                <div className="p-2 rounded-none bg-[#f5f6f7] border border-[#d9e0e8] font-semibold text-[#0a1317]">
-                  {selectedVendor.name}
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Repayment Amount (₹)</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={repaymentAmount}
-                  onChange={(e) => setRepaymentAmount(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] font-mono text-xs"
-                  placeholder="50000"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Payment Reference / UTR</label>
-                <input
-                  type="text"
-                  value={repaymentRef}
-                  onChange={(e) => setRepaymentRef(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] font-mono text-xs"
-                  placeholder="UTR-ICICI-49382019"
-                />
-              </div>
-
-              {parseFloat(repaymentAmount || '0') > (Number(selectedVendor.outstandingPayableMinor) / 100) && (
-                <div className="p-2 rounded-none bg-amber-50 border border-amber-200 text-amber-900 text-[10px] leading-tight flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Overpayment Guard:</strong> Exceeds {formatINR(selectedVendor.outstandingPayableMinor)}. Excess creates <strong>Vendor Receivable Asset</strong>.
-                  </span>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onboardMutation.mutate({
+                  name: newVendorName,
+                  vendorReference: newVendorRef || `VEN-${Date.now().toString().slice(-4)}`,
+                  email: newVendorEmail,
+                  phone: newVendorPhone
+                });
+              }}
+              className="p-4 space-y-3"
+            >
+              {formError && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                  {formError}
                 </div>
               )}
-            </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#d9e0e8]">
-              <button
-                type="button"
-                onClick={() => setShowRepaymentModal(false)}
-                className="meta-btn-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="meta-btn-buy"
-              >
-                {isSubmitting ? 'Posting...' : 'Post Repayment'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Onboard New Vendor Modal */}
-      {showOnboardModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-3">
-          <form
-            onSubmit={handleOnboardVendor}
-            className="bg-white w-full max-w-sm rounded-none p-4 border border-[#d9e0e8] shadow-xl space-y-3"
-          >
-            <div className="flex items-center justify-between border-b border-[#d9e0e8] pb-2">
-              <div className="flex items-center gap-1.5 text-[#0a1317] font-bold text-xs">
-                <UserPlus className="w-4 h-4 text-[#0064e0]" />
-                <span>Onboard New Vendor</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowOnboardModal(false)}
-                className="text-[#94a3b8] hover:text-[#0a1317] text-xs font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-2.5 text-xs">
               <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Vendor Name *</label>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Vendor Name *
+                </label>
                 <input
                   type="text"
                   required
+                  placeholder="e.g. Apex Global Funding"
                   value={newVendorName}
                   onChange={(e) => setNewVendorName(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
-                  placeholder="e.g. Apex Liquidity Fund"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Vendor Code / Ref</label>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Vendor Reference Code
+                </label>
                 <input
                   type="text"
+                  placeholder="e.g. VEN-01 (Auto-generated if empty)"
                   value={newVendorRef}
                   onChange={(e) => setNewVendorRef(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] font-mono text-xs"
-                  placeholder="VEN-ALF"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] font-mono focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Contact Email</label>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Contact Email
+                </label>
                 <input
                   type="email"
+                  placeholder="vendor@partners.com"
                   value={newVendorEmail}
                   onChange={(e) => setNewVendorEmail(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
-                  placeholder="finance@apexliquidity.com"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Phone</label>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Contact Phone
+                </label>
                 <input
                   type="text"
+                  placeholder="+91 9876543210"
                   value={newVendorPhone}
                   onChange={(e) => setNewVendorPhone(e.target.value)}
-                  className="w-full px-2.5 py-1.5 rounded-none border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
-                  placeholder="+91 99000 00000"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
                 />
               </div>
-            </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#d9e0e8]">
-              <button
-                type="button"
-                onClick={() => setShowOnboardModal(false)}
-                className="meta-btn-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="meta-btn-buy"
-              >
-                {isSubmitting ? 'Creating...' : 'Create Vendor Credit Line'}
-              </button>
-            </div>
-          </form>
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#e4e6eb]">
+                <button
+                  type="button"
+                  onClick={() => setShowOnboardModal(false)}
+                  className="px-3.5 py-1.5 bg-white border border-[#e4e6eb] text-xs font-medium text-[#657383] hover:text-[#0a1317] hover:bg-[#f0f2f5] rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={onboardMutation.isPending}
+                  className="px-4 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+                >
+                  {onboardMutation.isPending ? 'Onboarding...' : 'Onboard Vendor'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
+
+      {/* Modal: Record Funding Batch */}
+      {showBatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-[#e4e6eb] bg-[#fafbfc] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Plus className="w-4 h-4 text-[#0064e0]" />
+                <h3 className="text-sm font-semibold text-[#0a1317]">Record Vendor Funding Batch</h3>
+              </div>
+              <InfoTooltip
+                title="Vendor Funding Batch"
+                text="Records receipt of credit funds into the company bank ledger from the vendor."
+                hinglishHelp="Vendor se receive hua fund record karein jisse bank balance aur vendor payable badhta hai."
+                side="bottom"
+                align="end"
+              />
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!selectedVendor) return;
+                batchMutation.mutate({
+                  vendorId: selectedVendor.id,
+                  batchCode: batchCode || `BATCH-${Date.now().toString().slice(-4)}`,
+                  principalAmountRupees: parseFloat(batchPrincipal) || 0
+                });
+              }}
+              className="p-4 space-y-3"
+            >
+              {formError && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                  {formError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Selected Vendor
+                </label>
+                <div className="p-2 bg-[#f8fafc] border border-[#e4e6eb] rounded-lg text-xs font-semibold text-[#0a1317]">
+                  {selectedVendor?.name} ({selectedVendor?.vendorReference})
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Batch Code / UTR
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. BATCH-5805"
+                  value={batchCode}
+                  onChange={(e) => setBatchCode(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] font-mono focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Principal Amount (₹ INR) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="0.01"
+                  value={batchPrincipal}
+                  onChange={(e) => setBatchPrincipal(e.target.value)}
+                  placeholder="e.g. 100000"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] font-mono focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#e4e6eb]">
+                <button
+                  type="button"
+                  onClick={() => setShowBatchModal(false)}
+                  className="px-3.5 py-1.5 bg-white border border-[#e4e6eb] text-xs font-medium text-[#657383] hover:text-[#0a1317] hover:bg-[#f0f2f5] rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={batchMutation.isPending}
+                  className="px-4 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+                >
+                  {batchMutation.isPending ? 'Recording...' : 'Record Funding Batch'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Record Repayment */}
+      {showRepaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-[#e4e6eb] bg-[#fafbfc] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowDownLeft className="w-4 h-4 text-[#0064e0]" />
+                <h3 className="text-sm font-semibold text-[#0a1317]">Record Vendor Repayment</h3>
+              </div>
+              <InfoTooltip
+                title="Vendor Repayment"
+                text="Pay back the vendor reducing the current outstanding balance."
+                hinglishHelp="Vendor ko repayment karein taaki unka Balance Due kam ho sake."
+                side="bottom"
+                align="end"
+              />
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!selectedVendor) return;
+                repaymentMutation.mutate({
+                  vendorId: selectedVendor.id,
+                  amountRupees: parseFloat(repaymentAmount) || 0,
+                  paymentReference: repaymentRef || `REP-${Date.now().toString().slice(-4)}`
+                });
+              }}
+              className="p-4 space-y-3"
+            >
+              {formError && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                  {formError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Vendor
+                </label>
+                <div className="p-2 bg-[#f8fafc] border border-[#e4e6eb] rounded-lg text-xs font-semibold text-[#0a1317]">
+                  {selectedVendor?.name} (Outstanding: {formatINR(selectedVendor?.currentBalanceDueMinor || 0)})
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Repayment Amount (₹ INR) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  step="0.01"
+                  value={repaymentAmount}
+                  onChange={(e) => setRepaymentAmount(e.target.value)}
+                  placeholder="e.g. 50000"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] font-mono focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#0a1317] mb-1">
+                  Payment Reference / Bank UTR
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UTR-AXIS-982736"
+                  value={repaymentRef}
+                  onChange={(e) => setRepaymentRef(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-[#d1d5db] rounded-lg text-[#0a1317] font-mono focus:border-[#0064e0] focus:ring-1 focus:ring-[#0064e0] focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#e4e6eb]">
+                <button
+                  type="button"
+                  onClick={() => setShowRepaymentModal(false)}
+                  className="px-3.5 py-1.5 bg-white border border-[#e4e6eb] text-xs font-medium text-[#657383] hover:text-[#0a1317] hover:bg-[#f0f2f5] rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={repaymentMutation.isPending}
+                  className="px-4 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+                >
+                  {repaymentMutation.isPending ? 'Recording...' : 'Record Repayment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Modal */}
+      <NotificationModal
+        isOpen={notification.isOpen}
+        title={notification.title}
+        message={notification.message}
+        type={notification.type}
+        onClose={() => setNotification((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };
