@@ -990,23 +990,31 @@ export const MetaAssetsPage: React.FC = () => {
                                     Team Access & Permissions
                                   </span>
                                   <div className="text-xs space-y-1.5 text-[#334155]">
-                                    {account.userAccess && account.userAccess.length > 0 ? (
-                                      account.userAccess.map((ua: any) => (
-                                        <div key={ua.id} className="flex items-center justify-between p-1.5 bg-[#f8fafc] rounded-[4px] border border-[#eaedf1]">
-                                          <div className="flex items-center gap-1.5 truncate">
-                                            <Users className="w-3.5 h-3.5 text-[#0064e0] shrink-0" />
-                                            <span className="font-medium text-[#0f172a] truncate">{ua.user?.name || ua.user?.email}</span>
+                                    {(() => {
+                                      const teamAccess = (account.userAccess || []).filter((ua: any) => {
+                                        const role = ua.user?.role?.toUpperCase();
+                                        const name = (ua.user?.name || '').toLowerCase();
+                                        const email = (ua.user?.email || '').toLowerCase();
+                                        return role !== 'ADMIN' && role !== 'FINANCE' && !name.includes('admin') && !email.startsWith('admin');
+                                      });
+                                      return teamAccess.length > 0 ? (
+                                        teamAccess.map((ua: any) => (
+                                          <div key={ua.id} className="flex items-center justify-between p-1.5 bg-[#f8fafc] rounded-[4px] border border-[#eaedf1]">
+                                            <div className="flex items-center gap-1.5 truncate">
+                                              <Users className="w-3.5 h-3.5 text-[#0064e0] shrink-0" />
+                                              <span className="font-medium text-[#0f172a] truncate">{ua.user?.name || ua.user?.email}</span>
+                                            </div>
+                                            <span className="text-[10px] font-mono text-[#0064e0] bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200/50 shrink-0">
+                                              {ua.accessRole}
+                                            </span>
                                           </div>
-                                          <span className="text-[10px] font-mono text-[#0064e0] bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200/50 shrink-0">
-                                            {ua.accessRole}
-                                          </span>
+                                        ))
+                                      ) : (
+                                        <div className="text-[#94a3b8] italic p-2 bg-[#f8fafc] rounded text-center">
+                                          All Administrators have direct system access.
                                         </div>
-                                      ))
-                                    ) : (
-                                      <div className="text-[#94a3b8] italic p-2 bg-[#f8fafc] rounded text-center">
-                                        All Administrators have direct system access.
-                                      </div>
-                                    )}
+                                      );
+                                    })()}
 
                                     {isRestricted && (
                                       <div className="p-2 bg-rose-50 border border-rose-200/60 rounded-[4px] text-[11px] text-rose-800 space-y-1">

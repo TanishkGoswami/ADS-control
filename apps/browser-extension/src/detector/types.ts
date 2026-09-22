@@ -19,6 +19,7 @@ export interface DetectorRules {
 
 export interface ReadableElement {
   textContent: string | null;
+  parentElement?: ReadableElement | null;
   getAttribute(name: string): string | null;
   matches(selector: string): boolean;
   querySelector(selector: string): ReadableElement | null;
@@ -27,6 +28,7 @@ export interface ReadableElement {
 
 export interface ReadableDocument {
   querySelector(selector: string): ReadableElement | null;
+  querySelectorAll?(selector: string): Iterable<ReadableElement>;
 }
 
 export interface DomSignals {
@@ -35,6 +37,7 @@ export interface DomSignals {
   amountText?: string;
   amountMinor?: string;
   currencyCode?: 'INR';
+  paymentMethod?: string;
   qrVisible: boolean;
   dialogState: DialogState;
   successVisible: boolean;

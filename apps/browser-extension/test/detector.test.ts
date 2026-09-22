@@ -58,7 +58,7 @@ test('equal URL and visible account produce high-confidence sanitized evidence',
   assert.equal(result.qrVisible, true);
   assert.equal(isDetectionEvidence(result), true);
   assert.deepEqual(Object.keys(result).sort(), [
-    'amountMinor', 'amountText', 'blocked', 'confidence', 'currencyCode', 'detectorVersion', 'dialogState',
+    'amountMinor', 'amountText', 'paymentMethod', 'blocked', 'confidence', 'currencyCode', 'detectorVersion', 'dialogState',
     'pageUrl', 'qrVisible', 'requiresConfirmation', 'signalNames', 'snapshotHash', 'successVisible',
     'urlAccountId', 'visibleAccountId', 'visibleAccountName'
   ].sort());
@@ -80,4 +80,11 @@ test('evidence validator rejects extra sensitive fields', () => {
   assert.ok(result);
   assert.equal(isDetectionEvidence({ ...result, rawHtml: '<body>private</body>' }), false);
   assert.equal(isDetectionEvidence({ ...result, qrPayload: 'upi://pay?secret=1' }), false);
+});
+
+test('evidence validator accepts the sanitized payment method field', () => {
+  const result = evaluateDetection('https://business.facebook.com/billing?act=123456789012345', documentFor(fixture('qr-active.html')));
+  assert.ok(result);
+  assert.equal(result.paymentMethod, 'UPI');
+  assert.equal(isDetectionEvidence(result), true);
 });

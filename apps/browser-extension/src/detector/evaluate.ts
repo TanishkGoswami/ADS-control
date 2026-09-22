@@ -3,18 +3,38 @@ import type { DetectionEvidence, DetectorConfidence, DetectorRules, ReadableDocu
 import { extractUrlAccountId } from './url.ts';
 
 export const DEFAULT_DETECTOR_RULES: DetectorRules = {
-  version: 'fixture-v1',
+  version: 'fixture-v2',
   disabled: false,
   selectors: {
-    dialog: ['[data-ads-control-signal="payment-dialog"]', '[role="dialog"][aria-modal="true"]', '[role="dialog"]', 'body'],
-    accountId: ['[data-ads-control-signal="account-id"]'],
-    accountName: ['[data-ads-control-signal="account-name"]'],
-    amount: ['[data-ads-control-signal="amount"]'],
-    qr: ['[data-ads-control-signal="qr"]'],
-    processing: ['[data-ads-control-state="processing"]'],
-    success: ['[data-ads-control-state="success"]'],
-    failure: ['[data-ads-control-state="failure"]'],
-    expired: ['[data-ads-control-state="expired"]']
+    dialog: [
+      '[data-ads-control-signal="payment-dialog"]',
+      '[role="dialog"][aria-modal="true"]',
+      '[role="dialog"]',
+      'div[aria-modal="true"]',
+      'div[data-testid*="payment"]',
+      'div[class*="PaymentDialog"]',
+      'div[class*="Modal"]',
+      'body'
+    ],
+    accountId: ['[data-ads-control-signal="account-id"]', '[data-testid*="account-id"]', '[data-account-id]'],
+    accountName: ['[data-ads-control-signal="account-name"]', '[data-testid*="account-name"]'],
+    amount: ['[data-ads-control-signal="amount"]', '[data-testid*="amount"]', 'input[name="amount"]'],
+    qr: [
+      '[data-ads-control-signal="qr"]',
+      'canvas',
+      'img[src*="qr" i]',
+      'img[alt*="qr" i]',
+      'img[src*="data:image"]',
+      'svg[class*="qr" i]',
+      '[class*="qr" i]',
+      '[id*="qr" i]',
+      '[data-testid*="qr" i]',
+      '[aria-label*="qr" i]'
+    ],
+    processing: ['[data-ads-control-state="processing"]', '[data-testid*="processing"]'],
+    success: ['[data-ads-control-state="success"]', '[data-testid*="success"]'],
+    failure: ['[data-ads-control-state="failure"]', '[data-testid*="failure"]'],
+    expired: ['[data-ads-control-state="expired"]', '[data-testid*="expired"]']
   }
 };
 
@@ -58,7 +78,7 @@ export function isDetectionEvidence(value: unknown): value is DetectionEvidence 
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   const allowed = new Set([
-    'pageUrl', 'urlAccountId', 'visibleAccountId', 'visibleAccountName', 'amountText', 'amountMinor',
+    'pageUrl', 'urlAccountId', 'visibleAccountId', 'visibleAccountName', 'amountText', 'amountMinor', 'paymentMethod',
     'currencyCode', 'qrVisible', 'dialogState', 'successVisible', 'signalNames', 'confidence',
     'blocked', 'requiresConfirmation', 'detectorVersion', 'snapshotHash'
   ]);

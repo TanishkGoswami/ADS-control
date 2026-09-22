@@ -233,7 +233,7 @@ export class MetaService {
           fundLots: true,
           userAccess: {
             include: {
-              user: { select: { id: true, name: true, email: true } }
+              user: { select: { id: true, name: true, email: true, role: true } }
             }
           },
           statusHistory: { orderBy: { detectedAt: 'desc' }, take: 10 },
@@ -251,7 +251,7 @@ export class MetaService {
       return 0n;
     }
 
-    // 2. Prepay accounts: parse display string from funding source details
+    // 2. Prepay accounts: parse display string from funding source details if explicitly present
     const displayString = acc.funding_source_details?.display_string || '';
     if (/available/i.test(displayString) || /prepaid/i.test(displayString) || /balance/i.test(displayString)) {
       const match = displayString.match(/([0-9,]+\.?[0-9]*)/);
@@ -261,21 +261,17 @@ export class MetaService {
       }
     }
 
-    // 3. Prepay accounts with spend_cap and amount_spent
-    if (acc.is_prepay_account && acc.spend_cap && acc.amount_spent) {
-      const cap = BigInt(acc.spend_cap || '0');
-      const spent = BigInt(acc.amount_spent || '0');
-      if (cap > spent && cap < 10000000000n) {
-        return cap - spent;
-      }
-    }
-
-    // 4. Prepay accounts direct balance
-    if (acc.is_prepay_account && /^\d+$/.test(String(acc.balance ?? '')) && BigInt(acc.balance) > 0n) {
+    // 3. Prepay accounts direct balance (Meta Graph API returns `balance` in currency offset / paise)
+    if (acc.is_prepay_account && /^\d+$/.test(String(acc.balance ?? ''))) {
       return BigInt(acc.balance);
     }
 
-    return 0n;
+    // 4. Fallback direct balance if present
+    if (/^\d+$/.test(String(acc.balance ?? ''))) {
+      return BigInt(acc.balance);
+    }
+
+    return fallback;
   }
 
   async refreshAdAccount(organizationId: string, adAccountId: string) {
@@ -418,61 +414,65 @@ export class MetaService {
           const adAccountsData: any[] = adAccountsRes?.data || [];
           totalAccountsCount += adAccountsData.length;
 
-          // Process all ad accounts in high-speed parallel batches of 50
-          const chunkSize = 50;
-          for (let i = 0; i < adAccountsData.length; i += chunkSize) {
-            const chunk = adAccountsData.slice(i, i + chunkSize);
-            await Promise.all(
-              chunk.map(async (acc) => {
-                const isMetaActive = acc.account_status === 1;
-                const normalizedStatus = isMetaActive ? 'ACTIVE' : 'RESTRICTED';
-                const canRunAds = isMetaActive;
+          // Prepare DB operations and execute in atomic transaction batches (prevents DB connection pool starvation)
+          const dbOps: any[] = [];
+          for (const acc of adAccountsData) {
+            const isMetaActive = acc.account_status === 1;
+            const normalizedStatus = isMetaActive ? 'ACTIVE' : 'RESTRICTED';
+            const canRunAds = isMetaActive;
 
-                if (isMetaActive) activeCount++;
-                else restrictedCount++;
+            if (isMetaActive) activeCount++;
+            else restrictedCount++;
 
-                const effectiveBalanceMinor = this.extractEffectiveBalanceMinor(acc, 0n);
-                totalBalanceMinor += effectiveBalanceMinor;
+            const effectiveBalanceMinor = this.extractEffectiveBalanceMinor(acc, 0n);
+            totalBalanceMinor += effectiveBalanceMinor;
 
-                const assignedPortfolioId = (acc.business && connPortfolioMap.get(acc.business.id)) || primaryPortfolioId;
-                const existing = accountByMetaId.get(acc.id);
+            const assignedPortfolioId = (acc.business && connPortfolioMap.get(acc.business.id)) || primaryPortfolioId;
+            const existing = accountByMetaId.get(acc.id);
 
-                if (existing) {
-                  await this.prisma.adAccount.update({
-                    where: { id: existing.id },
-                    data: {
-                      name: acc.name || existing.name,
-                      businessPortfolioId: assignedPortfolioId || existing.businessPortfolioId,
-                      rawMetaStatus: String(acc.account_status),
-                      normalizedStatus,
-                      canRunAds,
-                      currentTrackedBalanceMinor: effectiveBalanceMinor,
-                      lastStatusSyncAt: new Date(),
-                      lastSpendSyncAt: new Date()
-                    }
-                  });
-                } else {
-                  const created = await this.prisma.adAccount.create({
-                    data: {
-                      organizationId: orgId,
-                      businessPortfolioId: assignedPortfolioId,
-                      metaAdAccountId: acc.id,
-                      name: acc.name || `Ad Account ${acc.id}`,
-                      internalAlias: acc.name,
-                      currencyCode: acc.currency || 'INR',
-                      timezoneName: acc.timezone_name || 'Asia/Kolkata',
-                      rawMetaStatus: String(acc.account_status),
-                      normalizedStatus,
-                      canRunAds,
-                      currentTrackedBalanceMinor: effectiveBalanceMinor,
-                      lastStatusSyncAt: new Date(),
-                      lastSpendSyncAt: new Date()
-                    }
-                  });
-                  accountByMetaId.set(acc.id, created);
-                }
-              })
-            );
+            if (existing) {
+              dbOps.push(
+                this.prisma.adAccount.update({
+                  where: { id: existing.id },
+                  data: {
+                    name: acc.name || existing.name,
+                    businessPortfolioId: assignedPortfolioId || existing.businessPortfolioId,
+                    rawMetaStatus: String(acc.account_status),
+                    normalizedStatus,
+                    canRunAds,
+                    currentTrackedBalanceMinor: effectiveBalanceMinor,
+                    lastStatusSyncAt: new Date(),
+                    lastSpendSyncAt: new Date()
+                  }
+                })
+              );
+            } else {
+              dbOps.push(
+                this.prisma.adAccount.create({
+                  data: {
+                    organizationId: orgId,
+                    businessPortfolioId: assignedPortfolioId,
+                    metaAdAccountId: acc.id,
+                    name: acc.name || `Ad Account ${acc.id}`,
+                    internalAlias: acc.name,
+                    currencyCode: acc.currency || 'INR',
+                    timezoneName: acc.timezone_name || 'Asia/Kolkata',
+                    rawMetaStatus: String(acc.account_status),
+                    normalizedStatus,
+                    canRunAds,
+                    currentTrackedBalanceMinor: effectiveBalanceMinor,
+                    lastStatusSyncAt: new Date(),
+                    lastSpendSyncAt: new Date()
+                  }
+                })
+              );
+            }
+          }
+
+          const batchSize = 25;
+          for (let i = 0; i < dbOps.length; i += batchSize) {
+            const batch = dbOps.slice(i, i + batchSize);
+            await this.prisma.$transaction(batch);
           }
 
           // Update connection status

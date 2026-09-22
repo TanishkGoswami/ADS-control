@@ -8,7 +8,7 @@ import { MetaFundingService } from './meta-funding.service';
 export class MetaFundingController {
   constructor(private readonly service: MetaFundingService) {}
   @Get('accounts') accounts(@CurrentActor() actor: AuthPrincipal) { return this.service.listAccounts(actor); }
-  @Get('eligibility') eligibility(@CurrentActor() actor: AuthPrincipal) { return this.service.listEligibility(actor); }
+  @Get('eligibility') eligibility(@CurrentActor() actor: AuthPrincipal, @Query('accountId') accountId?: string) { return this.service.listEligibility(actor, accountId); }
   @Get('requests') requests(@CurrentActor() actor: AuthPrincipal) { return this.service.listRequests(actor); }
   @Get('devices') devices(@CurrentActor() actor: AuthPrincipal) { return this.service.listDevices(actor); }
   @Post('requests') createRequest(@CurrentActor() actor: AuthPrincipal, @Body() input: CreateFundingRequestDto) { return this.service.createRequest(actor, input); }

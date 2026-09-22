@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
+import { CacheService } from '../../common/cache/cache.service';
 import { RealtimeService } from '../realtime/realtime.service';
 
 export interface EvaluateAlertsResult {
@@ -16,6 +17,7 @@ export class AlertsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
     private readonly realtime: RealtimeService
   ) {}
 
@@ -24,17 +26,21 @@ export class AlertsService {
    */
   async getAlerts(organizationId?: string, status?: string, severity?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
-    return this.prisma.alert.findMany({
-      where: {
-        organizationId: orgId,
-        ...(status && status !== 'ALL' ? { status } : {}),
-        ...(severity && severity !== 'ALL' ? { severity } : {})
-      },
-      orderBy: [
-        { severity: 'asc' }, // CRITICAL first
-        { updatedAt: 'desc' }
-      ]
-    });
+    const cacheKey = `alerts:list:${orgId}:${status || 'ALL'}:${severity || 'ALL'}`;
+
+    return this.cache.wrap(cacheKey, async () => {
+      return this.prisma.alert.findMany({
+        where: {
+          organizationId: orgId,
+          ...(status && status !== 'ALL' ? { status } : {}),
+          ...(severity && severity !== 'ALL' ? { severity } : {})
+        },
+        orderBy: [
+          { severity: 'asc' }, // CRITICAL first
+          { updatedAt: 'desc' }
+        ]
+      });
+    }, 30);
   }
 
   /**
@@ -408,6 +414,7 @@ export class AlertsService {
 
     // Broadcast live event to all connected browsers
     if (newAlertsCreated > 0 || autoResolved > 0 || alertsUpdated > 0) {
+      await this.cache.delPattern('alerts:*');
       this.realtime.broadcast('ALERT_CREATED', {
         organizationId: orgId,
         activeOpenAlerts,
@@ -437,6 +444,7 @@ export class AlertsService {
       data: { status, updatedAt: new Date() }
     });
 
+    await this.cache.delPattern('alerts:*');
     this.realtime.broadcast('ALERT_UPDATED', {
       organizationId: alert.organizationId,
       alertId: id,
@@ -459,6 +467,7 @@ export class AlertsService {
       }
     });
 
+    await this.cache.delPattern('alerts:*');
     this.realtime.broadcast('ALERT_UPDATED', { organizationId: orgId });
     return { success: true, count: result.count, message: `Cleared ${result.count} resolved alerts.` };
   }

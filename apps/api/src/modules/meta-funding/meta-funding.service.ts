@@ -25,7 +25,15 @@ export class MetaFundingService {
       where: {
         organizationId: actor.organizationId,
         currencyCode: 'INR',
-        ...(['ADMIN', 'FINANCE'].includes(actor.role) ? {} : { userAccess: { some: { userId: actor.userId, organizationId: actor.organizationId } } })
+        ...(['ADMIN', 'FINANCE'].includes(actor.role)
+          ? {}
+          : {
+              OR: [
+                { userAccess: { some: { userId: actor.userId } } },
+                { businessPortfolio: { metaConnection: { userId: actor.userId } } },
+                { businessPortfolio: { userAccess: { some: { userId: actor.userId } } } }
+              ]
+            })
       },
       select: { id: true, metaAdAccountId: true, name: true, internalAlias: true, currencyCode: true, normalizedStatus: true },
       orderBy: { name: 'asc' }
@@ -39,16 +47,30 @@ export class MetaFundingService {
     if (!lot) throw new NotFoundException('Fund lot not found');
     this.assertEligibleLot(lot, input.currencyCode);
     if (input.targetAdAccountId) await this.assertAccountAccess(this.prisma, actor, input.targetAdAccountId);
+    if (lot.locationAdAccountId && input.targetAdAccountId && lot.locationAdAccountId !== input.targetAdAccountId) {
+      throw new ConflictException('The selected fund lot is allocated to another Ad Account');
+    }
+    const targetAdAccountId = lot.locationAdAccountId || input.targetAdAccountId;
     const request = await this.prisma.fundingRequest.create({ data: {
       organizationId: actor.organizationId, referenceCode: `FR-${Date.now()}-${randomUUID().slice(0, 6)}`,
-      createdByUserId: actor.userId, fundLotId: lot.id, targetAdAccountId: input.targetAdAccountId,
+      createdByUserId: actor.userId, fundLotId: lot.id, targetAdAccountId,
       amountMinor: amount, currencyCode: 'INR', purpose: input.purpose.trim(), status: FundingRequestStatus.DRAFT
     }});
     return this.wire(request);
   }
 
-  async listEligibility(actor: AuthPrincipal) {
-    const lots = await this.prisma.fundLot.findMany({ where: { organizationId: actor.organizationId, currencyCode: 'INR', status: { in: ACTIVE_LOT_STATES } }, orderBy: { createdAt: 'desc' } });
+  async listEligibility(actor: AuthPrincipal, accountId?: string) {
+    if (accountId) await this.assertAccountAccess(this.prisma, actor, accountId);
+    const lots = await this.prisma.fundLot.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        currencyCode: 'INR',
+        status: { in: ACTIVE_LOT_STATES },
+        ...(accountId ? { locationAdAccountId: accountId } : {})
+      },
+      include: { locationAdAccount: { select: { id: true, name: true, metaAdAccountId: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
     const reservations = await this.prisma.topupReservation.groupBy({ by: ['fundLotId'], where: { organizationId: actor.organizationId, status: TopupReservationStatus.ACTIVE }, _sum: { amountMinor: true } });
     const reserved = new Map(reservations.map((item) => [item.fundLotId, item._sum.amountMinor ?? 0n]));
     return lots.map((lot) => ({ ...this.wire(lot), availableAmountMinor: (lot.currentAmountMinor - (reserved.get(lot.id) ?? 0n)).toString() }));
@@ -122,6 +144,9 @@ export class MetaFundingService {
           const lot = request?.fundLot ?? await tx.fundLot.findFirst({ where: { id: lotId, organizationId: actor.organizationId } });
           if (!lot) throw new NotFoundException('Fund lot not found');
           this.assertEligibleLot(lot, input.currencyCode);
+          if (lot.locationAdAccountId !== account.id) {
+            throw new ConflictException('This funding source is allocated to another Ad Account');
+          }
           const aggregate = await tx.topupReservation.aggregate({ where: { fundLotId: lot.id, status: TopupReservationStatus.ACTIVE }, _sum: { amountMinor: true } });
           if (lot.currentAmountMinor - (aggregate._sum.amountMinor ?? 0n) < amount) throw new ConflictException('Insufficient available fund balance');
           const session = await tx.metaTopupSession.create({ data: {
@@ -139,7 +164,7 @@ export class MetaFundingService {
           await this.event(tx, actor, session.id, 'TOPUP_MAPPED', input.idempotencyKey, { accountId: this.metaId(account.metaAdAccountId), amountMinor: amount.toString(), confidence: session.confidence });
           await this.audit(tx, actor, 'TOPUP_MAPPED', 'META_TOPUP_SESSION', session.id, { accountId: this.metaId(account.metaAdAccountId), amountMinor: amount.toString() });
           return this.wire(session);
-        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 15000 });
       } catch (error: any) {
         if (error?.code === 'P2034' && attempt < 2) continue;
         if (error?.code === 'P2002') {
@@ -265,12 +290,22 @@ export class MetaFundingService {
   }
 
   private async assertAccountAccess(db: Tx | PrismaService, actor: AuthPrincipal, adAccountId: string) {
-    const account = await db.adAccount.findFirst({ where: { id: adAccountId, organizationId: actor.organizationId } });
-    if (!account) throw new NotFoundException('Ad Account not found');
-    if (actor.role !== 'ADMIN' && actor.role !== 'FINANCE') {
-      const access = await db.userAdAccountAccess.findFirst({ where: { organizationId: actor.organizationId, userId: actor.userId, adAccountId } });
-      if (!access) throw new ForbiddenException('Ad Account access required');
-    }
+    const account = await db.adAccount.findFirst({
+      where: {
+        id: adAccountId,
+        organizationId: actor.organizationId,
+        ...(['ADMIN', 'FINANCE'].includes(actor.role)
+          ? {}
+          : {
+              OR: [
+                { userAccess: { some: { userId: actor.userId } } },
+                { businessPortfolio: { metaConnection: { userId: actor.userId } } },
+                { businessPortfolio: { userAccess: { some: { userId: actor.userId } } } }
+              ]
+            })
+      }
+    });
+    if (!account) throw new NotFoundException('Ad Account not found or unauthorized');
     if (account.currencyCode !== 'INR') throw new BadRequestException('Only INR Ad Accounts are supported');
     return account;
   }

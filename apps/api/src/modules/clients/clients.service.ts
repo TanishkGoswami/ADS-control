@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
-import { TransactionType, EntryType, toPaise, CreateClientInput, RecordClientPaymentInput } from '@ads-control/shared';
+import { TransactionType, EntryType, toPaise, CreateClientInput, UpdateClientInput, RecordClientPaymentInput } from '@ads-control/shared';
 
 @Injectable()
 export class ClientsService {
@@ -120,6 +120,80 @@ export class ClientsService {
       },
       include: { wallet: true }
     });
+  }
+
+  async updateClient(organizationId: string | undefined, clientId: string, input: UpdateClientInput) {
+    const orgId = await this.prisma.resolveOrgId(organizationId);
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, organizationId: orgId }
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    if (input.clientReference && input.clientReference !== client.clientReference) {
+      const existing = await this.prisma.client.findFirst({
+        where: { organizationId: orgId, clientReference: input.clientReference, id: { not: clientId } }
+      });
+      if (existing) throw new BadRequestException('Client reference already exists. Use a different code.');
+    }
+
+    return this.prisma.client.update({
+      where: { id: clientId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.companyName !== undefined ? { companyName: input.companyName || null } : {}),
+        ...(input.email !== undefined ? { email: input.email || null } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone || null } : {}),
+        ...(input.clientReference !== undefined ? { clientReference: input.clientReference } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {})
+      },
+      include: {
+        wallet: true,
+        payments: { orderBy: { paymentDate: 'desc' } },
+        jobs: {
+          include: {
+            allocations: {
+              include: {
+                adAccount: true
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  async deleteClient(organizationId: string | undefined, clientId: string) {
+    const orgId = await this.prisma.resolveOrgId(organizationId);
+    const client = await this.prisma.client.findFirst({
+      where: { id: clientId, organizationId: orgId }
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Clean up associated fund lots & reservations if any exist for this client
+      const lots = await tx.fundLot.findMany({
+        where: { organizationId: orgId, ownerType: 'CLIENT', ownerId: clientId },
+        select: { id: true }
+      });
+
+      if (lots.length > 0) {
+        const lotIds = lots.map((l) => l.id);
+        await tx.topupReservation.deleteMany({ where: { fundLotId: { in: lotIds } } });
+        await tx.metaTopupEvent.deleteMany({
+          where: { session: { fundLotId: { in: lotIds } } }
+        });
+        await tx.metaTopupSession.deleteMany({ where: { fundLotId: { in: lotIds } } });
+        await tx.fundingRequest.deleteMany({ where: { fundLotId: { in: lotIds } } });
+        await tx.fundLot.deleteMany({ where: { id: { in: lotIds } } });
+      }
+
+      // 2. Delete Client (Prisma cascades wallet, payments, jobs, allocations, leftoverBalances)
+      await tx.client.delete({
+        where: { id: clientId }
+      });
+
+      return { success: true, id: clientId };
+    }, { timeout: 15000 });
   }
 
   /**

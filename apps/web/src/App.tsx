@@ -101,7 +101,7 @@ const AppRoutes: React.FC = () => {
           openCommandPalette={() => setIsPaletteOpen(true)}
         />
 
-        <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8 max-w-[1260px] w-full mx-auto">
+        <main className="flex-1 overflow-y-auto px-3.5 py-4 sm:px-5 w-full max-w-[1720px] mx-auto">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/meta" element={canAccessMetaAssets ? <MetaAssetsPage /> : <Navigate to="/" replace />} />

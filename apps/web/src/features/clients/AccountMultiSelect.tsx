@@ -256,7 +256,8 @@ export const AccountMultiSelect: React.FC<Props> = ({ accounts, selectedIds, onC
                       <span className="font-semibold text-xs text-[#0a1317] truncate">
                         {account.internalAlias || account.name}
                       </span>
-                      {account.internalAlias && (
+                      {account.internalAlias &&
+                        account.internalAlias.trim().toLowerCase() !== account.name.trim().toLowerCase() && (
                         <span className="text-[10px] text-[#64748b] bg-[#f1f5f9] px-1 py-0.2 rounded">
                           {account.name}
                         </span>

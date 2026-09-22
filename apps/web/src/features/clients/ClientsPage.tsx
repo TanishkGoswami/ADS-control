@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, RotateCcw, CreditCard, UserPlus, Download, RefreshCw, Info, CheckCircle2, Circle, Layers, Receipt, Sliders } from 'lucide-react';
+import { Users, Plus, RotateCcw, CreditCard, UserPlus, Download, RefreshCw, Info, CheckCircle2, Circle, Layers, Receipt, Sliders, Edit3, Trash2, AlertTriangle } from 'lucide-react';
 import {
   fetchClients,
   createClientApi,
+  updateClientApi,
+  deleteClientApi,
   recordClientPaymentApi,
   allocateClientFundBatchApi,
   adjustAllocationApi,
@@ -36,6 +38,21 @@ export const ClientsPage: React.FC = () => {
   const [newClientEmail, setNewClientEmail] = useState<string>('');
   const [newClientPhone, setNewClientPhone] = useState<string>('');
   const [newClientRef, setNewClientRef] = useState<string>('');
+
+  // Edit Client Form State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [clientToEdit, setClientToEdit] = useState<ClientDto | null>(null);
+  const [editClientName, setEditClientName] = useState<string>('');
+  const [editCompanyName, setEditCompanyName] = useState<string>('');
+  const [editClientEmail, setEditClientEmail] = useState<string>('');
+  const [editClientPhone, setEditClientPhone] = useState<string>('');
+  const [editClientRef, setEditClientRef] = useState<string>('');
+  const [editClientStatus, setEditClientStatus] = useState<string>('ACTIVE');
+
+  // Delete Client State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<ClientDto | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Payment Form State
   const [paymentAmount, setPaymentAmount] = useState<string>('50000');
@@ -239,6 +256,87 @@ export const ClientsPage: React.FC = () => {
     }
   };
 
+  const openEditClient = (client: ClientDto) => {
+    setClientToEdit(client);
+    setEditClientName(client.name);
+    setEditCompanyName(client.companyName || '');
+    setEditClientEmail(client.email || '');
+    setEditClientPhone(client.phone || '');
+    setEditClientRef(client.clientReference);
+    setEditClientStatus(client.status || 'ACTIVE');
+    setFormError('');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientToEdit || !editClientName.trim()) return;
+    setFormError('');
+    setIsSubmitting(true);
+    try {
+      await updateClientApi(clientToEdit.id, {
+        name: editClientName.trim(),
+        companyName: editCompanyName.trim() || undefined,
+        email: editClientEmail.trim() || undefined,
+        phone: editClientPhone.trim() || undefined,
+        clientReference: editClientRef.trim() || clientToEdit.clientReference,
+        status: editClientStatus as any
+      });
+
+      setShowEditModal(false);
+      const updatedClientData = {
+        name: editClientName.trim(),
+        companyName: editCompanyName.trim(),
+        email: editClientEmail.trim(),
+        phone: editClientPhone.trim(),
+        clientReference: editClientRef.trim() || clientToEdit.clientReference,
+        status: editClientStatus
+      };
+
+      setClients((prev) =>
+        prev.map((c) => (c.id === clientToEdit.id ? { ...c, ...updatedClientData } : c))
+      );
+
+      if (selectedClient?.id === clientToEdit.id) {
+        setSelectedClient((prev) => (prev ? { ...prev, ...updatedClientData } : null));
+      }
+
+      setClientToEdit(null);
+      await loadData(true);
+    } catch (err: any) {
+      setFormError(err?.response?.data?.message || err.message || 'Client could not be updated.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openDeleteClient = (client: ClientDto) => {
+    setClientToDelete(client);
+    setFormError('');
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteClient = async () => {
+    if (!clientToDelete) return;
+    setFormError('');
+    setIsDeleting(true);
+    try {
+      await deleteClientApi(clientToDelete.id);
+      setShowDeleteModal(false);
+      const remaining = clients.filter((c) => c.id !== clientToDelete.id);
+      setClients(remaining);
+      if (selectedClient?.id === clientToDelete.id) {
+        setSelectedClient(remaining.length > 0 ? remaining[0] : null);
+      }
+      setClientToDelete(null);
+      await loadData(true);
+    } catch (err: any) {
+      setFormError(err?.response?.data?.message || err.message || 'Client could not be deleted.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleExportClients = () => {
     exportToCSV(
       clients.map((c) => ({
@@ -351,14 +449,46 @@ export const ClientsPage: React.FC = () => {
                     }`}
                   >
                     <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] font-mono text-[#0064e0] font-bold">{client.clientReference}</span>
-                        <h4 className="text-xs font-bold text-[#0a1317]">{client.name}</h4>
-                        <p className="text-[11px] text-[#64748b]">{client.companyName || client.email}</p>
+                      <div className="flex-1 min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono text-[#0064e0] font-bold">{client.clientReference}</span>
+                          <span className={`text-[9px] px-1 py-0.2 rounded font-semibold ${
+                            client.status === 'ACTIVE'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : client.status === 'SUSPENDED'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {client.status}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-[#0a1317] truncate">{client.name}</h4>
+                        <p className="text-[11px] text-[#64748b] truncate">{client.companyName || client.email || 'No company/email'}</p>
                       </div>
-                      <span className="meta-badge-success">
-                        {client.status}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditClient(client);
+                          }}
+                          className="p-1 hover:bg-[#e2e8f0] rounded text-[#64748b] hover:text-[#0064e0] transition-colors"
+                          title="Edit client"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDeleteClient(client);
+                          }}
+                          className="p-1 hover:bg-rose-50 rounded text-[#64748b] hover:text-rose-600 transition-colors"
+                          title="Delete client"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="mt-2 pt-2 border-t border-[#eef1f4] flex items-center justify-between text-[11px]">
@@ -375,21 +505,52 @@ export const ClientsPage: React.FC = () => {
           {selectedClient && (
             <div className="lg:col-span-2 rounded-none bg-white border border-[#d9e0e8] p-3 space-y-3">
               {/* Client Overview Card */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-none bg-[#f5f6f7] border border-[#d9e0e8]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-none bg-[#f5f6f7] border border-[#d9e0e8]">
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center flex-wrap gap-1.5">
                     <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-none bg-blue-50 text-[#0064e0] border border-blue-200">
                       {selectedClient.clientReference}
                     </span>
                     <h2 className="text-sm font-bold text-[#0a1317]">{selectedClient.name}</h2>
+                    {selectedClient.companyName && (
+                      <span className="text-xs text-[#64748b] font-normal">({selectedClient.companyName})</span>
+                    )}
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
+                      selectedClient.status === 'ACTIVE'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : selectedClient.status === 'SUSPENDED'
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}>
+                      {selectedClient.status}
+                    </span>
                   </div>
                   <p className="text-[11px] text-[#64748b] mt-0.5">
                     {selectedClient.email || 'No email'} • {selectedClient.phone || 'No phone'}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-1.5">
                   <button
+                    type="button"
+                    onClick={() => openEditClient(selectedClient)}
+                    className="meta-btn-secondary text-xs flex items-center gap-1 hover:text-[#0064e0] hover:border-[#0064e0]"
+                    title="Edit client info"
+                  >
+                    <Edit3 className="w-3 h-3 text-[#0064e0]" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDeleteClient(selectedClient)}
+                    className="meta-btn-secondary text-xs flex items-center gap-1 hover:text-rose-700 hover:border-rose-300"
+                    title="Delete client"
+                  >
+                    <Trash2 className="w-3 h-3 text-rose-600" />
+                    <span>Delete</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setShowLeftoverModal(true)}
                     className="meta-btn-secondary text-xs flex items-center gap-1"
                   >
@@ -397,6 +558,7 @@ export const ClientsPage: React.FC = () => {
                     <span>Sweep Leftovers</span>
                   </button>
                   <button
+                    type="button"
                     onClick={openAllocation}
                     disabled={Number(selectedClient.walletBalanceMinor) <= 0}
                     className="meta-btn-buy text-xs"
@@ -1364,6 +1526,187 @@ export const ClientsPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Edit Client Modal */}
+      {showEditModal && clientToEdit && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-3 backdrop-blur-sm">
+          <form
+            onSubmit={handleUpdateClient}
+            className="bg-white w-full max-w-sm rounded-[6px] p-4 border border-[#d9e0e8] shadow-2xl space-y-3"
+          >
+            <div className="flex items-center justify-between border-b border-[#d9e0e8] pb-2">
+              <div className="flex items-center gap-1.5 text-[#0a1317] font-bold text-xs">
+                <Edit3 className="w-4 h-4 text-[#0064e0]" />
+                <span>Edit Client Details</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowEditModal(false); setClientToEdit(null); }}
+                className="text-[#94a3b8] hover:text-[#0a1317] text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div>
+                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Client Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editClientName}
+                  onChange={(e) => setEditClientName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-[4px] border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
+                  placeholder="e.g. Zenith Media Labs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Company / Business Name</label>
+                <input
+                  type="text"
+                  value={editCompanyName}
+                  onChange={(e) => setEditCompanyName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-[4px] border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
+                  placeholder="e.g. Zenith Enterprises Pvt Ltd"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Client Code / Ref</label>
+                  <input
+                    type="text"
+                    value={editClientRef}
+                    onChange={(e) => setEditClientRef(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-[4px] border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] font-mono text-xs"
+                    placeholder="CLI-001"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Account Status</label>
+                  <select
+                    value={editClientStatus}
+                    onChange={(e) => setEditClientStatus(e.target.value)}
+                    className="w-full px-2 py-1.5 rounded-[4px] border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs bg-white"
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="INACTIVE">INACTIVE</option>
+                    <option value="SUSPENDED">SUSPENDED</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Billing Email</label>
+                <input
+                  type="email"
+                  value={editClientEmail}
+                  onChange={(e) => setEditClientEmail(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-[4px] border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
+                  placeholder="accounts@zenithmedia.com"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#0a1317] mb-0.5 text-[11px]">Phone</label>
+                <input
+                  type="text"
+                  value={editClientPhone}
+                  onChange={(e) => setEditClientPhone(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-[4px] border border-[#d9e0e8] focus:outline-none focus:border-[#0064e0] text-xs"
+                  placeholder="+91 98765 00000"
+                />
+              </div>
+
+              {formError && (
+                <div role="alert" className="border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700 rounded">
+                  {formError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#d9e0e8]">
+              <button
+                type="button"
+                onClick={() => { setShowEditModal(false); setClientToEdit(null); }}
+                className="meta-btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="meta-btn-buy text-xs"
+              >
+                {isSubmitting ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Delete Client Confirmation Modal */}
+      {showDeleteModal && clientToDelete && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-[6px] p-4 border border-rose-200 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-[#e2e8f0] pb-2">
+              <div className="flex items-center gap-1.5 text-rose-600 font-bold text-xs">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Delete Client</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowDeleteModal(false); setClientToDelete(null); }}
+                className="text-[#94a3b8] hover:text-[#0a1317] text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-[#0a1317]">
+              <p>
+                Are you sure you want to delete <strong className="font-bold text-[#0a1317]">{clientToDelete.name}</strong> (<span className="font-mono text-[#0064e0] font-bold">{clientToDelete.clientReference}</span>)?
+              </p>
+
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-[4px] text-[11px] text-rose-800 space-y-1">
+                <p className="font-semibold">⚠️ This action will permanently remove:</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-[10.5px]">
+                  <li>Client wallet record ({formatINR(clientToDelete.walletBalanceMinor)})</li>
+                  <li>Recorded payment receipts history</li>
+                  <li>Campaign jobs and ad account allocations</li>
+                </ul>
+              </div>
+
+              {formError && (
+                <div role="alert" className="border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700 rounded">
+                  {formError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#d9e0e8]">
+              <button
+                type="button"
+                onClick={() => { setShowDeleteModal(false); setClientToDelete(null); }}
+                className="meta-btn-secondary text-xs"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteClient}
+                disabled={isDeleting}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-[4px] transition-colors disabled:opacity-50 flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeleting ? 'Deleting...' : 'Delete Client'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

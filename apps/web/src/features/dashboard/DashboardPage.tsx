@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Wallet,
   Building,
@@ -9,19 +9,22 @@ import {
   AlertTriangle,
   Layers,
   RefreshCw,
-  Users,
   Filter,
   BookOpenCheck,
   Scale,
   Building2,
   ArrowRight,
   CheckCircle2,
-  Receipt,
-  FileSpreadsheet,
-  ArrowUpRight,
-  ArrowDownLeft
+  Search,
+  ExternalLink,
+  ShieldCheck,
+  Sparkles,
+  ChevronRight,
+  UserCheck,
+  X
 } from 'lucide-react';
 import { StatCard } from '../../components/StatCard';
+import { LiveAlertQueue } from './LiveAlertQueue';
 import {
   fetchDashboardMetrics,
   fetchMetaAdAccounts,
@@ -29,21 +32,15 @@ import {
   triggerMetaSyncApi,
   fetchUsersApi,
   fetchLedgerTransactions,
-  fetchReconciliationSnapshots,
-  UserProfileDto
+  fetchReconciliationSnapshots
 } from '../../lib/api';
 import {
   formatINR,
   formatCurrency,
-  formatDateTime,
-  DashboardMetricsDto,
-  AdAccountDto,
-  AlertDto,
-  FinancialLedgerTransactionDto
+  formatDateTime
 } from '@ads-control/shared';
 import { useAuth } from '../auth/AuthContext';
 import { useRealtimeEvent } from '../../lib/realtime';
-import { InfoTooltip } from '../../components/InfoTooltip';
 
 export const DashboardPage: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -51,6 +48,8 @@ export const DashboardPage: React.FC = () => {
 
   const [selectedManagerId, setSelectedManagerId] = useState<string>('ALL');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [accountSearch, setAccountSearch] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'RESTRICTED'>('ALL');
 
   const isUserAdmin = currentUser?.role === 'ADMIN';
   const isUserFinance = currentUser?.role === 'FINANCE';
@@ -125,10 +124,9 @@ export const DashboardPage: React.FC = () => {
     setIsSyncing(true);
     try {
       await triggerMetaSyncApi(currentUser?.id);
+      // Seamlessly refresh active dashboard caches
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] }),
-        queryClient.invalidateQueries({ queryKey: ['ledger-transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['reconciliation-snapshots'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard-meta-accounts'] })
       ]);
     } catch (err) {
@@ -138,55 +136,65 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  // Filtered Ad Accounts
+  const filteredAccounts = useMemo(() => {
+    return adAccounts.filter((account) => {
+      const matchesSearch =
+        !accountSearch ||
+        account.name.toLowerCase().includes(accountSearch.toLowerCase()) ||
+        account.metaAdAccountId.toLowerCase().includes(accountSearch.toLowerCase()) ||
+        (account.internalAlias && account.internalAlias.toLowerCase().includes(accountSearch.toLowerCase()));
+
+      const matchesStatus =
+        statusFilter === 'ALL' ||
+        (statusFilter === 'ACTIVE' && account.normalizedStatus === 'ACTIVE') ||
+        (statusFilter === 'RESTRICTED' && account.normalizedStatus === 'RESTRICTED');
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [adAccounts, accountSearch, statusFilter]);
+
   // Compute Reconciliation Stats for Finance
   const matchedCount = reconciliationSnapshots.filter((s: any) => s.status === 'MATCHED').length;
   const discrepancyCount = reconciliationSnapshots.filter((s: any) => s.status === 'DISCREPANCY').length;
 
   return (
-    <div className="space-y-3 pb-8 font-sans">
+    <div className="space-y-4 pb-8 font-sans">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 py-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-0.5">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-semibold text-[#0a1317]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-base font-bold text-[#1c1e21] tracking-tight">
               {isUserFinance
                 ? 'Finance & Treasury Control Center'
                 : 'Meta Ads Financial & Operations Control'}
             </h1>
             {isUserFinance ? (
-              <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-semibold">
+              <span className="meta-badge-success text-[10px] font-mono">
                 Finance Officer: {currentUser?.name}
               </span>
             ) : !isUserAdmin ? (
-              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+              <span className="meta-badge-blue text-[10px] font-mono">
                 Media Buyer: {currentUser?.name}
               </span>
             ) : (
-              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-semibold">
+              <span className="inline-flex items-center gap-1 rounded-[5px] bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 text-[10px] font-semibold font-mono">
                 Super Admin
               </span>
             )}
           </div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-[#64748b]">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-              Double-Entry Ledger Active
-            </span>
-            <span>•</span>
-            <span>Real-time Treasury Sync</span>
-          </div>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           {/* Admin Ads Manager Filter (Only for Admin) */}
           {isUserAdmin && (
-            <div className="flex items-center gap-1.5 bg-white border border-[#d9e0e8] px-2 py-1 rounded-lg">
-              <Filter className="w-3.5 h-3.5 text-[#64748b]" />
-              <span className="text-[10px] font-mono uppercase text-[#64748b] font-semibold">View As:</span>
+            <div className="flex items-center gap-1.5 bg-white border border-[#d7dce2] px-2.5 py-1 rounded-[5px] shadow-xs">
+              <Filter className="w-3.5 h-3.5 text-[#5d6c7b]" />
+              <span className="text-[10px] font-mono uppercase text-[#5d6c7b] font-semibold">View As:</span>
               <select
                 value={selectedManagerId}
                 onChange={(e) => setSelectedManagerId(e.target.value)}
-                className="text-xs font-semibold text-[#0a1317] bg-transparent focus:outline-none cursor-pointer"
+                className="text-xs font-semibold text-[#1c1e21] bg-transparent focus:outline-none cursor-pointer"
               >
                 <option value="ALL">All Managers (Global View)</option>
                 {teamMembers
@@ -200,8 +208,8 @@ export const DashboardPage: React.FC = () => {
             </div>
           )}
 
-          <div className="bg-white border border-[#d9e0e8] px-3 py-1 text-right rounded-lg shadow-xs">
-            <div className="text-[10px] font-mono uppercase text-[#64748b] font-semibold">Agency Float</div>
+          <div className="bg-white border border-[#d7dce2] px-3 py-1 text-right rounded-[5px] shadow-xs">
+            <div className="text-[9.5px] font-mono uppercase text-[#5d6c7b] font-semibold">Agency Float</div>
             <div className="text-xs font-bold font-mono text-[#0064e0]">
               {formatINR(metrics.agencyFreePoolMinor)}
             </div>
@@ -210,10 +218,11 @@ export const DashboardPage: React.FC = () => {
           <button
             onClick={handleSync}
             disabled={isSyncing || isMetricsFetching}
-            className="p-2 border border-[#d9e0e8] bg-white hover:bg-[#f1f4f7] text-[#0064e0] transition-colors rounded-lg shadow-xs"
-            title="Trigger Sync"
+            className="meta-btn-secondary min-h-8 px-2.5"
+            title="Trigger Meta Sync"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing || isMetricsFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#0064e0] ${isSyncing || isMetricsFetching ? 'animate-spin' : ''}`} />
+            <span className="ml-1.5 text-xs font-semibold">Sync</span>
           </button>
         </div>
       </div>
@@ -223,46 +232,30 @@ export const DashboardPage: React.FC = () => {
         <StatCard
           title="Client Wallets"
           value={formatINR(metrics.totalClientFundsMinor)}
-          subtitle="Available Funds"
           icon={Wallet}
           glow="blue"
-          trend="Live database balance"
-          trendPositive={true}
           infoTooltip="Total liquid client wallet balances ready for ad account allocation."
-          hinglishHelp="Sabhi clients ke wallets me bacha hua available balance jo campaign me allocate ho sakta hai."
         />
         <StatCard
           title="Vendor Outstanding"
           value={formatINR(metrics.totalVendorPayablesMinor)}
-          subtitle="Batches Pending"
           icon={Building}
           glow="amber"
-          statusBadge="Live Balances"
-          statusColor="bg-amber-50 text-amber-700 border-amber-200"
           infoTooltip="Total outstanding credit batches owed to funding vendors."
-          hinglishHelp="Vendors ka total bacha hua loan / credit jo agency ko repay karna baaki hai."
         />
         <StatCard
           title="Vendor Receivables"
           value={formatINR(metrics.totalVendorReceivablesMinor)}
-          subtitle="Overpayment Asset"
           icon={TrendingUp}
           glow="emerald"
-          statusBadge="Recoverable"
-          statusColor="bg-emerald-50 text-emerald-700 border-emerald-200"
           infoTooltip="Overpayment credits due back to the agency from funding partners."
-          hinglishHelp="Vendor ke paas extra bacha hua paisa jo agency wapas claim kar sakti hai."
         />
         <StatCard
           title="Locked in Restricted"
           value={formatINR(metrics.totalLockedFundsMinor)}
-          subtitle="Protected Lots"
           icon={ShieldAlert}
           glow="rose"
-          statusBadge={`${metrics.restrictedAdAccounts} Restricted`}
-          statusColor="bg-rose-50 text-rose-700 border-rose-200"
           infoTooltip="Client fund lots currently held on disabled or restricted Meta ad accounts."
-          hinglishHelp="Restricted ya ban hue accounts me atka hua budget jise safely reallocate kiya ja sakta hai."
         />
       </div>
 
@@ -273,11 +266,11 @@ export const DashboardPage: React.FC = () => {
           {/* Left 2 Cols: Financial Ledger Stream & Reconciliation Health */}
           <div className="lg:col-span-2 space-y-3">
             {/* Recent Ledger Transactions */}
-            <div className="bg-white rounded-xl border border-[#e4e6eb] shadow-sm overflow-hidden">
-              <div className="p-3 border-b border-[#e4e6eb] bg-[#fafbfc] flex items-center justify-between">
+            <div className="meta-card overflow-hidden">
+              <div className="p-3 border-b border-[#e4e7eb] bg-[#f8fafc] flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <BookOpenCheck className="w-4 h-4 text-[#0064e0]" />
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-[#0a1317]">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-[#1c1e21]">
                     Recent Journal Postings & Cash Flow
                   </h2>
                 </div>
@@ -292,34 +285,34 @@ export const DashboardPage: React.FC = () => {
 
               <div className="divide-y divide-[#f0f2f5] max-h-[380px] overflow-y-auto">
                 {recentTransactions.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-[#64748b]">
+                  <div className="p-8 text-center text-xs text-[#5d6c7b]">
                     No ledger transactions recorded yet.
                   </div>
                 ) : (
                   recentTransactions.slice(0, 6).map((tx) => (
                     <div
                       key={tx.id}
-                      className="p-3 hover:bg-[#fafbfc] transition-colors flex items-center justify-between gap-3 text-xs"
+                      className="p-3 hover:bg-[#f8fafc] transition-colors flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="min-w-0 space-y-0.5">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold text-[#0064e0]">
                             {tx.transactionCode}
                           </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#f0f2f5] text-[#475569] border border-[#e4e6eb] font-semibold">
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#f1f4f7] text-[#475569] border border-[#d7dce2] font-semibold">
                             {tx.transactionType}
                           </span>
                         </div>
                         <p className="text-[#475569] text-xs truncate max-w-md">
                           {tx.description}
                         </p>
-                        <div className="text-[10px] text-[#94a3b8] font-mono">
+                        <div className="text-[10px] text-[#8a94a1] font-mono">
                           Posted: {formatDateTime(tx.postedAt)}
                         </div>
                       </div>
 
                       <div className="text-right shrink-0 font-mono">
-                        <div className="font-bold text-[#0a1317] text-sm">
+                        <div className="font-bold text-[#1c1e21] text-sm">
                           {formatINR(tx.totalAmountMinor)}
                         </div>
                         <div className="text-[10px] text-emerald-700 font-semibold">
@@ -334,23 +327,23 @@ export const DashboardPage: React.FC = () => {
 
             {/* Reconciliation Health Card */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm flex items-center justify-between">
+              <div className="meta-card p-3.5 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-1.5">
                     <Scale className="w-4 h-4 text-[#0064e0]" />
-                    <span className="text-xs font-bold text-[#0a1317]">
+                    <span className="text-xs font-bold text-[#1c1e21]">
                       3-Way Reconciliation
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#657383] mt-1">
+                  <p className="text-[11px] text-[#5d6c7b] mt-1">
                     Meta vs Ledger vs Lot Ownership audit.
                   </p>
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                    <span className="meta-badge-success text-[10px] font-mono">
                       {matchedCount} Matched
                     </span>
                     {discrepancyCount > 0 && (
-                      <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-semibold">
+                      <span className="meta-badge-warning text-[10px] font-mono">
                         {discrepancyCount} Variance
                       </span>
                     )}
@@ -358,21 +351,21 @@ export const DashboardPage: React.FC = () => {
                 </div>
                 <NavLink
                   to="/reconciliation"
-                  className="px-3 py-1.5 bg-[#0064e0] hover:bg-[#0052b8] text-white text-xs font-semibold rounded-lg shadow-xs transition-colors shrink-0"
+                  className="meta-btn-buy"
                 >
                   Audit Status
                 </NavLink>
               </div>
 
-              <div className="bg-white p-4 rounded-xl border border-[#e4e6eb] shadow-sm flex items-center justify-between">
+              <div className="meta-card p-3.5 flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-1.5">
                     <Building2 className="w-4 h-4 text-[#0064e0]" />
-                    <span className="text-xs font-bold text-[#0a1317]">
+                    <span className="text-xs font-bold text-[#1c1e21]">
                       Vendor Credit Lines
                     </span>
                   </div>
-                  <p className="text-[11px] text-[#657383] mt-1">
+                  <p className="text-[11px] text-[#5d6c7b] mt-1">
                     Outstanding: {formatINR(metrics.totalVendorPayablesMinor)}
                   </p>
                   <div className="mt-2 text-xs font-mono text-[#475569]">
@@ -381,7 +374,7 @@ export const DashboardPage: React.FC = () => {
                 </div>
                 <NavLink
                   to="/vendors"
-                  className="px-3 py-1.5 bg-white hover:bg-[#f0f2f5] border border-[#e4e6eb] text-[#0a1317] text-xs font-semibold rounded-lg shadow-xs transition-colors shrink-0"
+                  className="meta-btn-secondary"
                 >
                   Manage Credit
                 </NavLink>
@@ -390,118 +383,150 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Right 1 Col: Live Financial Alert Queue */}
-          <div className="bg-white border border-[#e4e6eb] rounded-xl shadow-sm overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-3.5 py-3 border-b border-[#e4e6eb] bg-[#fafbfc]">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#0a1317] flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Treasury Risk & Alerts</span>
-              </h2>
-              <span className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse" />
-            </div>
-
-            <div className="p-3 divide-y divide-[#f0f2f5] flex-1 overflow-y-auto max-h-[480px]">
-              {alerts.length === 0 ? (
-                <div className="text-center py-12 text-xs text-[#64748b]">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
-                  No critical treasury alerts. All ledgers and wallets are balanced.
-                </div>
-              ) : (
-                alerts.map((al) => (
-                  <div key={al.id} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${
-                          al.severity === 'CRITICAL'
-                            ? 'text-rose-700 bg-rose-50 border-rose-200'
-                            : 'text-amber-700 bg-amber-50 border-amber-200'
-                        }`}
-                      >
-                        {al.severity}
-                      </span>
-                      <span className="text-[10px] font-mono text-[#64748b]">Real-time</span>
-                    </div>
-                    <div className="text-xs font-bold text-[#0a1317]">{al.title}</div>
-                    <div className="text-[11px] text-[#475569] leading-snug">{al.description}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <LiveAlertQueue
+            alerts={alerts}
+            title="Treasury Risk & Alerts"
+            isFinanceView={true}
+          />
         </div>
       ) : (
         /* ================= MEDIA BUYER / ADMIN VIEW ================= */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="lg:col-span-2 overflow-hidden bg-white border border-[#d9e0e8] rounded-xl shadow-sm">
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#d9e0e8] bg-[#f8fafc]">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#0a1317] flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-[#0064e0]" />
-                <span>Ad Accounts Portfolio ({adAccounts.length})</span>
-              </h2>
-              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 bg-[#f1f4f7] border border-[#d9e0e8] text-[#475569] rounded">
-                {metrics.activeAdAccounts} Active / {metrics.restrictedAdAccounts} Restricted
-              </span>
+          {/* Ad Accounts Portfolio Table Card */}
+          <div className="lg:col-span-2 overflow-hidden meta-card flex flex-col">
+            {/* Header & Controls */}
+            <div className="p-3 border-b border-[#e4e7eb] bg-[#f8fafc] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#0064e0]" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-[#1c1e21]">
+                  Ad Accounts Portfolio ({adAccounts.length})
+                </h2>
+                <span className="meta-badge-blue text-[10px] font-mono">
+                  {metrics.activeAdAccounts} Active / {metrics.restrictedAdAccounts} Restricted
+                </span>
+              </div>
+
+              {/* Search & Status Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative w-48 sm:w-60">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8a94a1]" />
+                  <input
+                    type="text"
+                    value={accountSearch}
+                    onChange={(e) => setAccountSearch(e.target.value)}
+                    placeholder="Search account or ID..."
+                    className="h-8 w-full pl-8 pr-7 text-xs bg-white border border-[#d7dce2] rounded-[5px] text-[#1c1e21] placeholder-[#8a94a1] focus:outline-none focus:ring-1 focus:ring-[#0064e0] focus:border-[#0064e0] transition-colors"
+                  />
+                  {accountSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setAccountSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8a94a1] hover:text-[#1c1e21] p-0.5 cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center bg-[#f1f4f7] p-0.5 rounded-[5px] border border-[#d7dce2] h-8">
+                  {(['ALL', 'ACTIVE', 'RESTRICTED'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStatusFilter(st)}
+                      className={`h-7 px-2.5 text-[11px] font-semibold rounded-[4px] transition-all cursor-pointer ${
+                        statusFilter === st
+                          ? 'bg-white text-[#1c1e21] shadow-xs'
+                          : 'text-[#5d6c7b] hover:text-[#1c1e21]'
+                      }`}
+                    >
+                      {st === 'ALL' ? 'All' : st === 'ACTIVE' ? 'Active' : 'Restricted'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div className="max-h-[520px] overflow-y-auto divide-y divide-[#e2e8f0]">
-              {adAccounts.length === 0 ? (
-                <div className="p-8 text-center text-xs text-[#64748b]">
-                  {selectedManagerId !== 'ALL'
+            {/* List Body */}
+            <div className="max-h-[540px] overflow-y-auto divide-y divide-[#f0f2f5]">
+              {filteredAccounts.length === 0 ? (
+                <div className="p-12 text-center text-xs text-[#5d6c7b]">
+                  {accountSearch || statusFilter !== 'ALL'
+                    ? 'No ad accounts match the selected filters.'
+                    : selectedManagerId !== 'ALL'
                     ? 'No ad accounts assigned to this manager yet. Use Team & Users to assign.'
-                    : 'No ad accounts synced yet. Click "Sync Meta" to import your accounts.'}
+                    : 'No ad accounts synced yet. Click "Sync" to import your accounts.'}
                 </div>
               ) : (
-                adAccounts.map((account) => {
-                  const assignedUsers = (account as any).userAccess || [];
+                filteredAccounts.map((account) => {
+                  const assignedUsers = ((account as any).userAccess || []).filter((ua: any) => {
+                    const role = ua.user?.role?.toUpperCase();
+                    const name = (ua.user?.name || '').toLowerCase();
+                    const email = (ua.user?.email || '').toLowerCase();
+                    return role !== 'ADMIN' && role !== 'FINANCE' && !name.includes('admin') && !email.startsWith('admin');
+                  });
+                  const isRestricted = account.normalizedStatus === 'RESTRICTED';
+
                   return (
                     <div
                       key={account.id}
-                      className="px-3 py-2.5 bg-white hover:bg-[#f8fafc] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                      className="p-3 hover:bg-[#f8fafc] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                     >
+                      {/* Left Side: Account Info */}
                       <div className="flex items-start gap-2.5 min-w-0">
                         <div
-                          className={`w-2 h-2 mt-1 rounded-full shrink-0 ${
-                            account.normalizedStatus === 'ACTIVE'
-                              ? 'bg-emerald-600'
-                              : 'bg-rose-600'
+                          className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${
+                            isRestricted ? 'bg-rose-600' : 'bg-emerald-600'
                           }`}
                         />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-[#0a1317] truncate">{account.name}</span>
-                            <span className="text-[10px] font-mono text-[#64748b]">({account.metaAdAccountId})</span>
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-[#1c1e21] truncate max-w-xs">{account.name}</span>
+                            <span className="text-[10px] font-mono text-[#5d6c7b] bg-[#f1f4f7] px-1.5 py-0.2 rounded border border-[#e4e7eb]">
+                              {account.metaAdAccountId}
+                            </span>
+                            {account.internalAlias &&
+                              account.internalAlias.trim().toLowerCase() !== account.name.trim().toLowerCase() && (
+                                <span className="text-[10px] text-[#5d6c7b] italic font-medium">
+                                  ({account.internalAlias})
+                                </span>
+                              )}
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[11px] text-[#64748b]">{account.internalAlias || account.currencyCode}</span>
-                            {assignedUsers.length > 0 && (
-                              <div className="flex gap-1">
-                                {assignedUsers.map((ua: any) => (
-                                  <span
-                                    key={ua.id || ua.userId}
-                                    className="text-[9px] font-mono px-1 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded"
-                                  >
-                                    {ua.user?.name || 'Assigned'}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+
+                          {/* Assigned Team Members */}
+                          {assignedUsers.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] text-[#8a94a1] font-medium flex items-center gap-1">
+                                <UserCheck className="w-3 h-3 text-[#5d6c7b]" />
+                                Access:
+                              </span>
+                              {assignedUsers.map((ua: any) => (
+                                <span
+                                  key={ua.id || ua.userId}
+                                  className="text-[9.5px] font-mono px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-medium"
+                                >
+                                  {ua.user?.name || 'Assigned'}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
+                      {/* Right Side: Balances & Status */}
                       <div className="flex items-center gap-4 self-end sm:self-center shrink-0">
                         <div className="text-right font-mono">
                           <div
-                            className={`text-[9px] uppercase font-bold ${
-                              account.normalizedStatus === 'RESTRICTED' ? 'text-rose-700' : 'text-[#64748b]'
+                            className={`text-[9.5px] uppercase font-bold tracking-tight ${
+                              isRestricted ? 'text-rose-700' : 'text-[#5d6c7b]'
                             }`}
                           >
-                            {account.normalizedStatus === 'RESTRICTED' ? 'Stuck Amount' : 'Available Balance'}
+                            {isRestricted ? 'Stuck Balance' : 'Available Balance'}
                           </div>
                           <div
-                            className={`font-semibold ${
-                              account.normalizedStatus === 'RESTRICTED'
-                                ? 'text-rose-700 bg-rose-50 px-1 border border-rose-200 rounded'
-                                : 'text-[#0a1317]'
+                            className={`text-sm font-bold ${
+                              isRestricted ? 'text-rose-700' : 'text-[#1c1e21]'
                             }`}
                           >
                             {formatCurrency(account.currentTrackedBalanceMinor, account.currencyCode)}
@@ -509,21 +534,29 @@ export const DashboardPage: React.FC = () => {
                         </div>
 
                         <div className="text-right font-mono">
-                          <div className="text-[9px] text-[#64748b] uppercase font-bold">Allocated</div>
-                          <div className="font-semibold text-[#0064e0]">
+                          <div className="text-[9.5px] text-[#5d6c7b] uppercase font-bold tracking-tight">Allocated</div>
+                          <div className="text-sm font-bold text-[#0064e0]">
                             {formatCurrency(account.allocatedFundsMinor, account.currencyCode)}
                           </div>
                         </div>
 
                         <span
-                          className={`text-[10px] font-mono px-1.5 py-0.5 uppercase border font-semibold rounded ${
-                            account.normalizedStatus === 'ACTIVE'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}
+                          className={
+                            isRestricted
+                              ? 'meta-badge-critical text-[10px] font-mono'
+                              : 'meta-badge-success text-[10px] font-mono'
+                          }
                         >
                           {account.normalizedStatus}
                         </span>
+
+                        <NavLink
+                          to="/meta"
+                          className="p-1 text-[#5d6c7b] hover:text-[#0064e0] hover:bg-[#f1f4f7] rounded transition-colors"
+                          title="View in Meta Assets"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </NavLink>
                       </div>
                     </div>
                   );
@@ -532,37 +565,8 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Alert Queue */}
-          <div className="bg-white border border-[#d9e0e8] rounded-xl shadow-sm overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#d9e0e8] bg-[#f8fafc]">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-[#0a1317] flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Live Alert Queue</span>
-              </h2>
-              <span className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse" />
-            </div>
-
-            <div className="p-3 divide-y divide-[#e2e8f0] flex-1 overflow-y-auto max-h-[520px]">
-              {alerts.length === 0 ? (
-                <div className="text-center py-8 text-xs text-[#64748b] font-mono">
-                  No active critical alerts. All ad accounts and wallets balanced.
-                </div>
-              ) : (
-                alerts.map((al) => (
-                  <div key={al.id} className="py-2.5 first:pt-0 last:pb-0 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1 rounded">
-                        {al.severity}
-                      </span>
-                      <span className="text-[10px] font-mono text-[#64748b]">Real-time</span>
-                    </div>
-                    <div className="text-xs font-bold text-[#0a1317]">{al.title}</div>
-                    <div className="text-[11px] text-[#475569]">{al.description}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          {/* Alert Queue Card */}
+          <LiveAlertQueue alerts={alerts} title="Live Alert Queue" />
         </div>
       )}
     </div>

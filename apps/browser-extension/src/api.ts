@@ -1,6 +1,6 @@
 export interface DeviceSession { token: string; deviceId: string; expiresAt: string; organizationId: string; }
 export interface FundingAccount { id: string; metaAdAccountId: string; name: string; internalAlias?: string; currencyCode: string; normalizedStatus: string; }
-export interface FundingSource { id: string; referenceCode?: string; purpose?: string; amountMinor?: string; availableAmountMinor?: string; status: string; targetAdAccountId?: string; fundLotId?: string; }
+export interface FundingSource { id: string; referenceCode?: string; purpose?: string; amountMinor?: string; availableAmountMinor?: string; status: string; targetAdAccountId?: string; fundLotId?: string; locationAdAccountId?: string; fundLot?: { locationAdAccountId?: string }; }
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }

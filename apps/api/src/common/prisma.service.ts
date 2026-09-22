@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
   private cachedOrgId: string | null = null;
+  private readonly orgIdMap = new Map<string, string>();
 
   async onModuleInit() {
     await this.$connect();
@@ -22,11 +23,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    */
   async resolveOrgId(organizationId?: string): Promise<string> {
     if (organizationId && organizationId !== 'org-1' && organizationId.trim().length > 0) {
+      if (this.orgIdMap.has(organizationId)) {
+        return this.orgIdMap.get(organizationId)!;
+      }
       // Validate provided org exists
       const existing = await this.organization.findUnique({
         where: { id: organizationId }
       });
       if (existing) {
+        this.orgIdMap.set(organizationId, existing.id);
         return existing.id;
       }
     }

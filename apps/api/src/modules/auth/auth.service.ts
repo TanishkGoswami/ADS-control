@@ -3,6 +3,7 @@ import type { AuthPrincipal, ExtensionPairingClaimInput } from '@ads-control/sha
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../../common/prisma.service';
+import { CacheService } from '../../common/cache/cache.service';
 import { hashBearerToken } from '../../common/auth.guard';
 import { RealtimeService } from '../realtime/realtime.service';
 
@@ -16,6 +17,7 @@ const opaqueToken = () => randomBytes(32).toString('base64url');
 export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(CacheService) private readonly cache: CacheService,
     private readonly realtime: RealtimeService
   ) {}
 
@@ -111,12 +113,22 @@ export class AuthService {
     if (!user.passwordHash && password) user = await this.prisma.userProfile.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(password, 10) } });
 
     const token = opaqueToken();
+    const tokenHash = hashBearerToken(token);
     const expiresAt = new Date(Date.now() + WEB_SESSION_MS);
     await this.prisma.$transaction([
       this.prisma.userProfile.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
-      this.prisma.webSession.create({ data: { organizationId: orgId, userId: user.id, tokenHash: hashBearerToken(token), expiresAt } }),
+      this.prisma.webSession.create({ data: { organizationId: orgId, userId: user.id, tokenHash, expiresAt } }),
       this.prisma.auditLog.create({ data: { organizationId: orgId, actorUserId: user.id, action: 'USER_LOGIN', entityType: 'WEB_SESSION', entityId: user.id, newState: { expiresAt } } })
     ]);
+
+    const actor: AuthPrincipal = {
+      userId: user.id,
+      organizationId: orgId,
+      role: user.role as any,
+      sessionKind: 'WEB'
+    };
+    await this.cache.set(`auth:session:${tokenHash}`, actor, 180);
+    await this.cache.set(`auth:user:${user.id}`, this.toUser(user), 180);
 
     this.realtime.broadcast('USERS_UPDATED', { organizationId: orgId, userId: user.id });
 
@@ -124,9 +136,11 @@ export class AuthService {
   }
 
   async getCurrentUser(actor: AuthPrincipal) {
-    const user = await this.prisma.userProfile.findFirst({ where: { id: actor.userId, organizationId: actor.organizationId, status: 'ACTIVE' } });
-    if (!user) throw new UnauthorizedException('User session not found');
-    return this.toUser(user);
+    return this.cache.wrap(`auth:user:${actor.userId}`, async () => {
+      const user = await this.prisma.userProfile.findFirst({ where: { id: actor.userId, organizationId: actor.organizationId, status: 'ACTIVE' } });
+      if (!user) throw new UnauthorizedException('User session not found');
+      return this.toUser(user);
+    }, 120);
   }
 
   async createPairing(actor: AuthPrincipal) {
@@ -165,6 +179,7 @@ export class AuthService {
   async revokeDevice(actor: AuthPrincipal, deviceId: string) {
     const result = await this.prisma.extensionDevice.updateMany({ where: { id: deviceId, organizationId: actor.organizationId, userId: actor.userId, revokedAt: null }, data: { revokedAt: new Date() } });
     if (result.count !== 1) throw new UnauthorizedException('Device not found or already revoked');
+    await this.cache.delPattern('auth:*');
     return { revoked: true };
   }
 

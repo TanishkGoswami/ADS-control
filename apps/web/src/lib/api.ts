@@ -8,6 +8,7 @@ import {
   FinancialLedgerTransactionDto,
   AlertDto,
   CreateClientInput,
+  UpdateClientInput,
   RecordClientPaymentInput,
   CreateVendorInput,
   RecordVendorFundingBatchInput,
@@ -229,6 +230,20 @@ export const createClientApi = async (input: CreateClientInput) => {
   SWRCache.invalidate('clients');
   SWRCache.invalidate('dashboard');
   const res = await apiClient.post('/clients', { client: input });
+  return res.data;
+};
+
+export const updateClientApi = async (clientId: string, input: UpdateClientInput) => {
+  SWRCache.invalidate('clients');
+  SWRCache.invalidate('dashboard');
+  const res = await apiClient.patch(`/clients/${clientId}`, input);
+  return res.data;
+};
+
+export const deleteClientApi = async (clientId: string) => {
+  SWRCache.invalidate('clients');
+  SWRCache.invalidate('dashboard');
+  const res = await apiClient.delete(`/clients/${clientId}`);
   return res.data;
 };
 

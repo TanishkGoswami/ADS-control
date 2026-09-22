@@ -46,17 +46,14 @@ export const Sidebar: React.FC = () => {
   const visibleNavItems = navItems.filter((item) => (!item.adminOnly || isAdmin) && (!item.roles || item.roles.includes(user?.role || '')));
 
   return (
-    <aside className="w-[222px] bg-white border-r border-[#d9e0e8] hidden md:flex flex-col h-screen select-none relative z-20">
-      <div className="h-12 px-3.5 border-b border-[#d9e0e8] flex items-center justify-between">
+    <aside className="w-[180px] bg-white border-r border-[#d9e0e8] hidden md:flex flex-col h-screen select-none relative z-20 shrink-0">
+      <div className="h-12 px-3 border-b border-[#d9e0e8] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-none bg-[#0064e0] flex items-center justify-center text-white font-bold text-xs">
+          <div className="w-5 h-5 rounded-[4px] bg-[#0064e0] flex items-center justify-center text-white font-bold text-xs shadow-2xs">
             M
           </div>
-          <span className="font-bold text-xs text-[#0a1317]">ADS CONTROL</span>
+          <span className="font-bold text-xs text-[#0a1317] tracking-tight">ADS CONTROL</span>
         </div>
-        <span className="text-[10px] font-mono px-1 py-0.2 rounded-none bg-[#f1f4f7] text-[#475569] border border-[#d9e0e8]">
-          {user?.role || 'OPERATOR'}
-        </span>
       </div>
 
       <div className="flex-1 py-2 px-1.5 space-y-0.5 overflow-y-auto">

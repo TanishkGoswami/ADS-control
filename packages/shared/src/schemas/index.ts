@@ -14,6 +14,15 @@ export const CreateClientSchema = z.object({
   clientReference: z.string().min(2, 'Reference code required')
 });
 
+export const UpdateClientSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').optional(),
+  companyName: z.string().optional().nullable(),
+  email: z.string().email('Invalid email address').optional().nullable().or(z.literal('')),
+  phone: z.string().optional().nullable(),
+  clientReference: z.string().min(2, 'Reference code required').optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional()
+});
+
 export const RecordClientPaymentSchema = z.object({
   clientId: z.string().uuid('Invalid Client ID'),
   amountRupees: z.number().positive('Amount must be greater than 0'),
@@ -126,6 +135,7 @@ export const TopupMappingSchema = z.object({
 }).strict();
 
 export type CreateClientInput = z.infer<typeof CreateClientSchema>;
+export type UpdateClientInput = z.infer<typeof UpdateClientSchema>;
 export type RecordClientPaymentInput = z.infer<typeof RecordClientPaymentSchema>;
 export type CreateClientJobInput = z.infer<typeof CreateClientJobSchema>;
 export type AllocateFundToJobInput = z.infer<typeof AllocateFundToJobSchema>;
