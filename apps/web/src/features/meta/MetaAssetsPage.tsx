@@ -582,9 +582,6 @@ export const MetaAssetsPage: React.FC = () => {
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-[#64748b] mt-0.5">
-                {isUserAdmin ? 'Graph API v22.0 Master Control' : `Operator: ${currentUser?.name || 'Media Buyer'}`}
-              </div>
             </div>
           </div>
 
