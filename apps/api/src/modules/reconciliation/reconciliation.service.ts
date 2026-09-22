@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
+import { CacheService } from '../../common/cache/cache.service';
 import { ReconciliationStatus, MoneyStatus } from '@ads-control/shared';
 
 @Injectable()
 export class ReconciliationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService
+  ) {}
 
   /**
    * Run 3-Way Reconciliation across all active Ad Accounts
@@ -59,25 +63,32 @@ export class ReconciliationService {
       snapshots.push(snapshot);
     }
 
+    await this.cache.delPattern('recon:*');
+    await this.cache.delPattern('reports:*');
+
     return snapshots;
   }
 
   async getLatestSnapshots(organizationId?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
-    const snapshots = await this.prisma.reconciliationSnapshot.findMany({
-      where: { organizationId: orgId },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: { adAccount: true }
-    });
+    const cacheKey = `recon:snapshots:${orgId}`;
 
-    const map = new Map<string, any>();
-    for (const snap of snapshots) {
-      if (!map.has(snap.adAccountId)) {
-        map.set(snap.adAccountId, snap);
+    return this.cache.wrap(cacheKey, async () => {
+      const snapshots = await this.prisma.reconciliationSnapshot.findMany({
+        where: { organizationId: orgId },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: { adAccount: true }
+      });
+
+      const map = new Map<string, any>();
+      for (const snap of snapshots) {
+        if (!map.has(snap.adAccountId)) {
+          map.set(snap.adAccountId, snap);
+        }
       }
-    }
-    return Array.from(map.values());
+      return Array.from(map.values());
+    }, 60);
   }
 
   async reconcileAdAccount(organizationId: string, adAccountId: string) {
@@ -90,7 +101,7 @@ export class ReconciliationService {
       .filter((lot) => lot.status === MoneyStatus.ALLOCATED || lot.status === MoneyStatus.LOCKED)
       .reduce((sum, lot) => sum + lot.currentAmountMinor, 0n);
     const variance = account.currentTrackedBalanceMinor - allocatedLotsSum;
-    return this.prisma.reconciliationSnapshot.create({
+    const snap = await this.prisma.reconciliationSnapshot.create({
       data: {
         organizationId,
         adAccountId,
@@ -102,5 +113,11 @@ export class ReconciliationService {
         discrepancyReasons: variance === 0n ? [] : ['Targeted Meta balance differs from allocated fund lots.']
       }
     });
+
+    await this.cache.delPattern('recon:*');
+    await this.cache.delPattern('reports:*');
+
+    return snap;
   }
 }
+

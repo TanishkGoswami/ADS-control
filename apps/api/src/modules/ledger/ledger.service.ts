@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
+import { CacheService } from '../../common/cache/cache.service';
 import { TransactionType, EntryType, assertLedgerBalanced, toPaise } from '@ads-control/shared';
 import type { Prisma } from '@prisma/client';
 
@@ -21,17 +22,24 @@ export interface PostTransactionDto {
 
 @Injectable()
 export class LedgerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService
+  ) {}
 
   /**
    * Get Chart of Accounts with current balance
    */
   async getAccounts(organizationId?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
-    return this.prisma.financialAccount.findMany({
-      where: { organizationId: orgId },
-      orderBy: { accountCode: 'asc' }
-    });
+    const cacheKey = `ledger:accounts:${orgId}`;
+
+    return this.cache.wrap(cacheKey, async () => {
+      return this.prisma.financialAccount.findMany({
+        where: { organizationId: orgId },
+        orderBy: { accountCode: 'asc' }
+      });
+    }, 60);
   }
 
   /**
@@ -58,35 +66,39 @@ export class LedgerService {
       throw new BadRequestException(err.message);
     }
 
-    const totalAmountMinor = debits.reduce((acc, d) => acc + d, 0n);
-    const txCode = `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const totalAmount = debits.reduce((sum, val) => sum + val, 0n);
 
     const writeTransaction = async (tx: Prisma.TransactionClient) => {
-      // Create Header
+      // Fetch account IDs for provided codes
+      const accountCodes = [...new Set(dto.entries.map((e) => e.accountCode))];
+      const accounts = await tx.financialAccount.findMany({
+        where: { organizationId: orgId, accountCode: { in: accountCodes } }
+      });
+
+      if (accounts.length !== accountCodes.length) {
+        throw new BadRequestException('One or more financial accounts in the transaction do not exist');
+      }
+
+      const accountIds = new Map(accounts.map((a) => [a.accountCode, a.id]));
+
+      // 2. Create Header
       const transaction = await tx.financialLedgerTransaction.create({
         data: {
           organizationId: orgId,
-          transactionCode: txCode,
+          transactionCode: `TX-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           transactionType: dto.transactionType,
           description: dto.description,
           referenceEntity: dto.referenceEntity,
           referenceId: dto.referenceId,
-          totalAmountMinor: totalAmountMinor,
+          totalAmountMinor: totalAmount,
           currencyCode: dto.currencyCode || 'INR'
         }
       });
 
-      const accountCodes = [...new Set(dto.entries.map((entry) => entry.accountCode))];
-      const accounts = await tx.financialAccount.findMany({
-        where: { organizationId: orgId, accountCode: { in: accountCodes } },
-        select: { id: true, accountCode: true }
-      });
-      const accountIds = new Map(accounts.map((account) => [account.accountCode, account.id]));
-      const missingCode = accountCodes.find((code) => !accountIds.has(code));
-      if (missingCode) throw new NotFoundException(`Financial Account with code "${missingCode}" not found`);
-
+      // 3. Create Entries
       await tx.financialLedgerEntry.createMany({
         data: dto.entries.map((entry) => ({
+          organizationId: orgId,
           transactionId: transaction.id,
           accountId: accountIds.get(entry.accountCode)!,
           entryType: entry.entryType,
@@ -98,9 +110,14 @@ export class LedgerService {
       return transaction;
     };
 
-    return transactionClient
-      ? writeTransaction(transactionClient)
-      : this.prisma.$transaction(writeTransaction, { timeout: 15000 });
+    const result = transactionClient
+      ? await writeTransaction(transactionClient)
+      : await this.prisma.$transaction(writeTransaction, { timeout: 15000 });
+
+    await this.cache.delPattern('ledger:*');
+    await this.cache.delPattern('reports:*');
+
+    return result;
   }
 
   /**
@@ -138,15 +155,19 @@ export class LedgerService {
    */
   async getTransactions(organizationId?: string, limit = 50) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
-    return this.prisma.financialLedgerTransaction.findMany({
-      where: { organizationId: orgId },
-      orderBy: { postedAt: 'desc' },
-      take: limit,
-      include: {
-        entries: {
-          include: { account: true }
+    const cacheKey = `ledger:transactions:${orgId}:${limit}`;
+
+    return this.cache.wrap(cacheKey, async () => {
+      return this.prisma.financialLedgerTransaction.findMany({
+        where: { organizationId: orgId },
+        orderBy: { postedAt: 'desc' },
+        take: limit,
+        include: {
+          entries: {
+            include: { account: true }
+          }
         }
-      }
-    });
+      });
+    }, 60);
   }
 }

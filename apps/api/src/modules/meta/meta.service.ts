@@ -414,8 +414,11 @@ export class MetaService {
           const adAccountsData: any[] = adAccountsRes?.data || [];
           totalAccountsCount += adAccountsData.length;
 
-          // Prepare DB operations and execute in atomic transaction batches (prevents DB connection pool starvation)
-          const dbOps: any[] = [];
+          const toCreate: any[] = [];
+          const toUpdate: Promise<any>[] = [];
+          const syncedMetaIds: string[] = [];
+          const now = new Date();
+
           for (const acc of adAccountsData) {
             const isMetaActive = acc.account_status === 1;
             const normalizedStatus = isMetaActive ? 'ACTIVE' : 'RESTRICTED';
@@ -429,56 +432,83 @@ export class MetaService {
 
             const assignedPortfolioId = (acc.business && connPortfolioMap.get(acc.business.id)) || primaryPortfolioId;
             const existing = accountByMetaId.get(acc.id);
+            syncedMetaIds.push(acc.id);
 
             if (existing) {
-              dbOps.push(
-                this.prisma.adAccount.update({
-                  where: { id: existing.id },
-                  data: {
-                    name: acc.name || existing.name,
-                    businessPortfolioId: assignedPortfolioId || existing.businessPortfolioId,
-                    rawMetaStatus: String(acc.account_status),
-                    normalizedStatus,
-                    canRunAds,
-                    currentTrackedBalanceMinor: effectiveBalanceMinor,
-                    lastStatusSyncAt: new Date(),
-                    lastSpendSyncAt: new Date()
-                  }
-                })
-              );
+              // Delta check: only update if balance, status, portfolio, or name changed
+              const hasChanged =
+                existing.name !== acc.name ||
+                existing.normalizedStatus !== normalizedStatus ||
+                existing.currentTrackedBalanceMinor !== effectiveBalanceMinor ||
+                (assignedPortfolioId && existing.businessPortfolioId !== assignedPortfolioId);
+
+              if (hasChanged) {
+                toUpdate.push(
+                  this.prisma.adAccount.update({
+                    where: { id: existing.id },
+                    data: {
+                      name: acc.name || existing.name,
+                      businessPortfolioId: assignedPortfolioId || existing.businessPortfolioId,
+                      rawMetaStatus: String(acc.account_status),
+                      normalizedStatus,
+                      canRunAds,
+                      currentTrackedBalanceMinor: effectiveBalanceMinor,
+                      lastStatusSyncAt: now,
+                      lastSpendSyncAt: now
+                    }
+                  }).catch(() => {})
+                );
+              }
             } else {
-              dbOps.push(
-                this.prisma.adAccount.create({
-                  data: {
-                    organizationId: orgId,
-                    businessPortfolioId: assignedPortfolioId,
-                    metaAdAccountId: acc.id,
-                    name: acc.name || `Ad Account ${acc.id}`,
-                    internalAlias: acc.name,
-                    currencyCode: acc.currency || 'INR',
-                    timezoneName: acc.timezone_name || 'Asia/Kolkata',
-                    rawMetaStatus: String(acc.account_status),
-                    normalizedStatus,
-                    canRunAds,
-                    currentTrackedBalanceMinor: effectiveBalanceMinor,
-                    lastStatusSyncAt: new Date(),
-                    lastSpendSyncAt: new Date()
-                  }
-                })
-              );
+              toCreate.push({
+                organizationId: orgId,
+                businessPortfolioId: assignedPortfolioId,
+                metaAdAccountId: acc.id,
+                name: acc.name || `Ad Account ${acc.id}`,
+                internalAlias: acc.name,
+                currencyCode: acc.currency || 'INR',
+                timezoneName: acc.timezone_name || 'Asia/Kolkata',
+                rawMetaStatus: String(acc.account_status),
+                normalizedStatus,
+                canRunAds,
+                currentTrackedBalanceMinor: effectiveBalanceMinor,
+                lastStatusSyncAt: now,
+                lastSpendSyncAt: now
+              });
             }
           }
 
-          const batchSize = 25;
-          for (let i = 0; i < dbOps.length; i += batchSize) {
-            const batch = dbOps.slice(i, i + batchSize);
-            await this.prisma.$transaction(batch);
+          // 1. Bulk create any new ad accounts in 1 single fast query
+          if (toCreate.length > 0) {
+            await this.prisma.adAccount.createMany({
+              data: toCreate,
+              skipDuplicates: true
+            }).catch(() => {});
+          }
+
+          // 2. Parallel delta updates (only for changed accounts)
+          if (toUpdate.length > 0) {
+            await Promise.all(toUpdate);
+          }
+
+          // 3. Bulk touch timestamps for all synced accounts in 1 single query
+          if (syncedMetaIds.length > 0) {
+            await this.prisma.adAccount.updateMany({
+              where: {
+                organizationId: orgId,
+                metaAdAccountId: { in: syncedMetaIds }
+              },
+              data: {
+                lastStatusSyncAt: now,
+                lastSpendSyncAt: now
+              }
+            }).catch(() => {});
           }
 
           // Update connection status
           await this.prisma.metaConnection.update({
             where: { id: connection.id },
-            data: { lastSuccessfulSyncAt: new Date(), connectionStatus: 'CONNECTED' }
+            data: { lastSuccessfulSyncAt: now, connectionStatus: 'CONNECTED' }
           }).catch(() => {});
         })
       );
