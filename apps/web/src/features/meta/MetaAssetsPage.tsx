@@ -850,14 +850,11 @@ export const MetaAssetsPage: React.FC = () => {
                                       <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider">
                                         1. Connected Facebook Profile
                                       </div>
-                                      <div className="text-xs font-bold text-[#0f172a] truncate" title={connectionInfo?.internalName || 'Primary Master Connection'}>
-                                        {connectionInfo?.internalName || 'Primary Master Connection'}
-                                      </div>
-                                      <div className="text-[11px] text-[#64748b] font-mono flex items-center gap-1.5">
-                                        <span>FB ID: {connectionInfo?.externalContextId || 'Master'}</span>
+                                      <div className="text-xs font-bold text-[#0f172a] truncate" title={connectionInfo?.internalName || (connectionInfo?.externalContextId ? `FB: ${connectionInfo.externalContextId}` : 'Primary Master Connection')}>
+                                        {connectionInfo?.internalName || (connectionInfo?.externalContextId ? `FB: ${connectionInfo.externalContextId}` : 'Primary Master Connection')}
                                       </div>
                                       {assignedUser && (
-                                        <div className="text-[10px] font-medium text-[#0064e0] bg-blue-50/80 px-1.5 py-0.2 rounded w-fit border border-blue-200/50 mt-1">
+                                        <div className="text-[10px] font-medium text-[#0064e0] bg-blue-50/80 px-1.5 py-0.5 rounded w-fit border border-blue-200/50 mt-1">
                                           Assigned: {assignedUser.name}
                                         </div>
                                       )}
@@ -873,11 +870,13 @@ export const MetaAssetsPage: React.FC = () => {
                                       <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider">
                                         2. Business Portfolio
                                       </div>
-                                      <div className="text-xs font-bold text-[#0f172a] truncate" title={account.businessPortfolio?.name || 'Standalone Portfolio'}>
-                                        {account.businessPortfolio?.name || 'Standalone Portfolio'}
-                                      </div>
-                                      <div className="text-[11px] text-[#64748b] font-mono">
-                                        Meta Business ID: {bizId || 'Direct'}
+                                      <div className="text-xs font-bold text-[#0f172a] truncate flex items-center gap-1.5 flex-wrap" title={account.businessPortfolio?.name || 'Standalone Portfolio'}>
+                                        <span>{account.businessPortfolio?.name || 'Standalone Portfolio'}</span>
+                                        {bizId && (
+                                          <span className="text-[11px] font-normal text-[#64748b] font-mono">
+                                            (MB: {bizId})
+                                          </span>
+                                        )}
                                       </div>
                                       {portfolioUrl && (
                                         <a
@@ -904,9 +903,6 @@ export const MetaAssetsPage: React.FC = () => {
                                       </div>
                                       <div className="text-xs font-bold text-[#0f172a] truncate" title={account.name}>
                                         {account.name}
-                                      </div>
-                                      <div className="text-[11px] text-[#64748b] font-mono">
-                                        Account ID: {account.metaAdAccountId}
                                       </div>
                                       <a
                                         href={adsManagerUrl}
