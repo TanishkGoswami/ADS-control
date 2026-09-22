@@ -24,7 +24,8 @@ import {
   CreditCard,
   AlertCircle,
   CheckCircle2,
-  Info
+  Info,
+  ArrowUpDown
 } from 'lucide-react';
 import {
   fetchMetaAdAccounts,
@@ -63,6 +64,7 @@ export const MetaAssetsPage: React.FC = () => {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [portfolioFilter, setPortfolioFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState<string>('DEFAULT');
   const [page, setPage] = useState(1);
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -356,7 +358,7 @@ export const MetaAssetsPage: React.FC = () => {
   );
   const filteredAccounts = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return adAccounts.filter((account) => {
+    const list = adAccounts.filter((account) => {
       const portfolio = account.businessPortfolio?.name || '';
       const matchesQuery = !term || [account.name, account.metaAdAccountId, portfolio]
         .some((value) => String(value || '').toLowerCase().includes(term));
@@ -370,7 +372,42 @@ export const MetaAssetsPage: React.FC = () => {
 
       return matchesQuery && matchesStatus && matchesPortfolio && matchesManager;
     });
-  }, [adAccounts, portfolioFilter, query, statusFilter, selectedManagerId]);
+
+    return list.sort((a, b) => {
+      if (sortBy === 'BALANCE_DESC') {
+        const balA = Number(a.currentTrackedBalanceMinor || 0);
+        const balB = Number(b.currentTrackedBalanceMinor || 0);
+        return balB - balA;
+      }
+      if (sortBy === 'BALANCE_ASC') {
+        const balA = Number(a.currentTrackedBalanceMinor || 0);
+        const balB = Number(b.currentTrackedBalanceMinor || 0);
+        return balA - balB;
+      }
+      if (sortBy === 'STUCK_DESC') {
+        const stuckA = Number(a.lockedFundsMinor || 0);
+        const stuckB = Number(b.lockedFundsMinor || 0);
+        return stuckB - stuckA;
+      }
+      if (sortBy === 'NEWEST') {
+        const dateA = new Date(a.createdAt || a.lastStatusSyncAt || 0).getTime();
+        const dateB = new Date(b.createdAt || b.lastStatusSyncAt || 0).getTime();
+        return dateB - dateA;
+      }
+      if (sortBy === 'OLDEST') {
+        const dateA = new Date(a.createdAt || a.lastStatusSyncAt || 0).getTime();
+        const dateB = new Date(b.createdAt || b.lastStatusSyncAt || 0).getTime();
+        return dateA - dateB;
+      }
+      if (sortBy === 'NAME_ASC') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      if (sortBy === 'NAME_DESC') {
+        return (b.name || '').localeCompare(a.name || '');
+      }
+      return 0;
+    });
+  }, [adAccounts, portfolioFilter, query, statusFilter, selectedManagerId, sortBy]);
 
   const activeCount = useMemo(() => filteredAccounts.filter((a) => a.normalizedStatus === 'ACTIVE').length, [filteredAccounts]);
   const restrictedCount = useMemo(() => filteredAccounts.filter((a) => a.normalizedStatus === 'RESTRICTED').length, [filteredAccounts]);
@@ -635,9 +672,24 @@ export const MetaAssetsPage: React.FC = () => {
               <option key={portfolio} value={portfolio}>{portfolio}</option>
             ))}
           </select>
-          {(query || statusFilter !== 'ALL' || portfolioFilter !== 'ALL') && (
+          <select
+            value={sortBy}
+            onChange={(event) => { setSortBy(event.target.value); setPage(1); }}
+            className="h-8 rounded-[5px] border border-[#e2e8f0] bg-white px-2.5 text-xs outline-none focus:border-[#0064e0] text-[#334155] font-medium cursor-pointer"
+            aria-label="Sort accounts"
+          >
+            <option value="DEFAULT">Sort: Default</option>
+            <option value="BALANCE_DESC">Balance: High to Low (₹)</option>
+            <option value="BALANCE_ASC">Balance: Low to High (₹)</option>
+            <option value="STUCK_DESC">Stuck Funds: High to Low (₹)</option>
+            <option value="NEWEST">Date: Newest First</option>
+            <option value="OLDEST">Date: Oldest First</option>
+            <option value="NAME_ASC">Name: A to Z</option>
+            <option value="NAME_DESC">Name: Z to A</option>
+          </select>
+          {(query || statusFilter !== 'ALL' || portfolioFilter !== 'ALL' || sortBy !== 'DEFAULT') && (
             <button
-              onClick={() => { setQuery(''); setStatusFilter('ALL'); setPortfolioFilter('ALL'); setPage(1); }}
+              onClick={() => { setQuery(''); setStatusFilter('ALL'); setPortfolioFilter('ALL'); setSortBy('DEFAULT'); setPage(1); }}
               className="text-xs text-[#0064e0] hover:underline font-medium ml-1"
             >
               Clear filters
@@ -650,11 +702,38 @@ export const MetaAssetsPage: React.FC = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#eaedf1] bg-[#f8fafc] text-xs font-semibold text-[#64748b]">
-                <th className="py-3 px-3.5">Ad Account</th>
+                <th
+                  className="py-3 px-3.5 cursor-pointer select-none hover:text-[#0f172a] transition-colors"
+                  onClick={() => setSortBy((prev) => (prev === 'NAME_ASC' ? 'NAME_DESC' : 'NAME_ASC'))}
+                  title="Click to sort by Account Name"
+                >
+                  <div className="inline-flex items-center gap-1.5">
+                    <span>Ad Account</span>
+                    <ArrowUpDown className={`w-3 h-3 ${sortBy.startsWith('NAME') ? 'text-[#0064e0]' : 'text-[#94a3b8]'}`} />
+                  </div>
+                </th>
                 <th className="py-3 px-3.5">Account ID</th>
                 <th className="py-3 px-3.5">Status</th>
-                <th className="py-3 px-3.5 text-right">Available Balance</th>
-                <th className="py-3 px-3.5 text-right">Stuck / Trapped in Meta</th>
+                <th
+                  className="py-3 px-3.5 text-right cursor-pointer select-none hover:text-[#0f172a] transition-colors"
+                  onClick={() => setSortBy((prev) => (prev === 'BALANCE_DESC' ? 'BALANCE_ASC' : 'BALANCE_DESC'))}
+                  title="Click to sort by Available Balance"
+                >
+                  <div className="inline-flex items-center justify-end gap-1.5 w-full">
+                    <span>Available Balance</span>
+                    <ArrowUpDown className={`w-3 h-3 ${sortBy.startsWith('BALANCE') ? 'text-[#0064e0]' : 'text-[#94a3b8]'}`} />
+                  </div>
+                </th>
+                <th
+                  className="py-3 px-3.5 text-right cursor-pointer select-none hover:text-[#0f172a] transition-colors"
+                  onClick={() => setSortBy((prev) => (prev === 'STUCK_DESC' ? 'DEFAULT' : 'STUCK_DESC'))}
+                  title="Click to sort by Stuck / Trapped Funds"
+                >
+                  <div className="inline-flex items-center justify-end gap-1.5 w-full">
+                    <span>Stuck / Trapped in Meta</span>
+                    <ArrowUpDown className={`w-3 h-3 ${sortBy === 'STUCK_DESC' ? 'text-[#0064e0]' : 'text-[#94a3b8]'}`} />
+                  </div>
+                </th>
                 <th className="py-3 px-3.5 text-right">Actions</th>
               </tr>
             </thead>
