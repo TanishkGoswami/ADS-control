@@ -47,15 +47,15 @@ export const LoginPage: React.FC = () => {
   return (
     <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 bg-[#f5f6f7] font-sans antialiased text-[#0f172a]">
       {/* Main Login Card */}
-      <div className="w-full max-w-[460px] bg-white border border-[#eaedf1] rounded-[5px] p-8 sm:p-9 space-y-6 shadow-sm">
-        {/* Card Header with Large Prominent Logo */}
+      <div className="w-full max-w-[420px] bg-white border border-[#eaedf1] rounded-[5px] p-6 sm:p-7 space-y-4 shadow-sm">
+        {/* Card Header with Large Prominent Logo and tight spacing */}
         <div className="flex flex-col items-center text-center">
           <img
             src="/logo.png"
             alt="We Are Agency Logo"
-            className="h-20 w-auto object-contain mb-4"
+            className="h-24 sm:h-28 w-auto object-contain"
           />
-          <h1 className="text-xl font-bold text-[#0f172a] tracking-tight">
+          <h1 className="text-base font-bold text-[#0f172a] tracking-tight mt-2">
             Sign in with credentials
           </h1>
         </div>
