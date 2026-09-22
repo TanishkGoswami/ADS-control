@@ -454,7 +454,7 @@ export const LedgerPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f0f2f5] font-mono text-xs">
-                      {selectedTx.entries?.map((entry) => (
+                      {selectedTx.entries?.map((entry: any) => (
                         <tr key={entry.id} className="hover:bg-[#fafbfc]">
                           <td className="px-2.5 py-2 font-semibold text-[#0a1317]">
                             <div>{entry.account?.accountCode || entry.accountId}</div>

@@ -63,7 +63,7 @@ export const ClientsPage: React.FC = () => {
       ]);
       setClients(clientData);
       if (clientData && clientData.length > 0) {
-        setSelectedClient((prev) => (prev ? clientData.find((c) => c.id === prev.id) || clientData[0] : clientData[0]));
+        setSelectedClient((prev: ClientDto | null) => (prev ? clientData.find((c) => c.id === prev.id) || clientData[0] : clientData[0]));
       } else {
         setSelectedClient(null);
       }
@@ -120,12 +120,12 @@ export const ClientsPage: React.FC = () => {
 
     try {
       // Optimistic instant UI update
-      setSelectedClient((prev) => {
+      setSelectedClient((prev: ClientDto | null) => {
         if (!prev) return prev;
         const newBal = (BigInt(prev.walletBalanceMinor || 0) + adsFundPaise).toString();
         return { ...prev, walletBalanceMinor: newBal };
       });
-      setClients((prev) =>
+      setClients((prev: ClientDto[]) =>
         prev.map((c) =>
           c.id === selectedClient.id
             ? { ...c, walletBalanceMinor: (BigInt(c.walletBalanceMinor || 0) + adsFundPaise).toString() }
@@ -169,12 +169,12 @@ export const ClientsPage: React.FC = () => {
 
     try {
       // Optimistic instant update
-      setSelectedClient((prev) => {
+      setSelectedClient((prev: ClientDto | null) => {
         if (!prev) return prev;
         const newBal = (BigInt(prev.walletBalanceMinor || 0) - allocatedPaise).toString();
         return { ...prev, walletBalanceMinor: newBal };
       });
-      setClients((prev) =>
+      setClients((prev: ClientDto[]) =>
         prev.map((c) =>
           c.id === selectedClient.id
             ? { ...c, walletBalanceMinor: (BigInt(c.walletBalanceMinor || 0) - allocatedPaise).toString() }
