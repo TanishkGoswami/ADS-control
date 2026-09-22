@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
+import { CacheService } from '../../common/cache/cache.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { CreateUserDto, AssignAccountsDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
@@ -8,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
     private readonly realtime: RealtimeService
   ) {}
 
@@ -16,57 +18,60 @@ export class UsersService {
    */
   async listUsers(organizationId?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
+    const cacheKey = `users:list:${orgId}`;
 
-    const users = await this.prisma.userProfile.findMany({
-      where: { organizationId: orgId },
-      include: {
-        adAccountAccess: {
-          include: {
-            adAccount: {
-              select: {
-                id: true,
-                metaAdAccountId: true,
-                name: true,
-                internalAlias: true,
-                normalizedStatus: true,
-                currentTrackedBalanceMinor: true
+    return this.cache.wrap(cacheKey, async () => {
+      const users = await this.prisma.userProfile.findMany({
+        where: { organizationId: orgId },
+        include: {
+          adAccountAccess: {
+            include: {
+              adAccount: {
+                select: {
+                  id: true,
+                  metaAdAccountId: true,
+                  name: true,
+                  internalAlias: true,
+                  normalizedStatus: true,
+                  currentTrackedBalanceMinor: true
+                }
               }
+            }
+          },
+          metaConnections: {
+            select: {
+              id: true,
+              internalName: true,
+              connectionStatus: true,
+              lastSuccessfulSyncAt: true
             }
           }
         },
-        metaConnections: {
-          select: {
-            id: true,
-            internalName: true,
-            connectionStatus: true,
-            lastSuccessfulSyncAt: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'asc' }
-    });
+        orderBy: { createdAt: 'asc' }
+      });
 
-    return users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      role: u.role,
-      status: u.status,
-      lastLoginAt: u.lastLoginAt,
-      createdAt: u.createdAt,
-      assignedAccountsCount: u.adAccountAccess.length,
-      connectedFacebookAccountsCount: u.metaConnections.length,
-      assignedAccounts: u.adAccountAccess.map((acc) => ({
-        id: acc.adAccount.id,
-        metaAdAccountId: acc.adAccount.metaAdAccountId,
-        name: acc.adAccount.name,
-        alias: acc.adAccount.internalAlias,
-        status: acc.adAccount.normalizedStatus,
-        balanceINR: (Number(acc.adAccount.currentTrackedBalanceMinor) / 100).toFixed(2),
-        accessRole: acc.accessRole
-      })),
-      metaConnections: u.metaConnections
-    }));
+      return users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        status: u.status,
+        lastLoginAt: u.lastLoginAt,
+        createdAt: u.createdAt,
+        assignedAccountsCount: u.adAccountAccess.length,
+        connectedFacebookAccountsCount: u.metaConnections.length,
+        assignedAccounts: u.adAccountAccess.map((acc) => ({
+          id: acc.adAccount.id,
+          metaAdAccountId: acc.adAccount.metaAdAccountId,
+          name: acc.adAccount.name,
+          alias: acc.adAccount.internalAlias,
+          status: acc.adAccount.normalizedStatus,
+          balanceINR: (Number(acc.adAccount.currentTrackedBalanceMinor) / 100).toFixed(2),
+          accessRole: acc.accessRole
+        })),
+        metaConnections: u.metaConnections
+      }));
+    }, 60);
   }
 
   /**
@@ -119,6 +124,10 @@ export class UsersService {
       }
     });
 
+    await this.cache.delPattern('users:*');
+    await this.cache.delPattern('meta:*');
+    await this.cache.delPattern('reports:*');
+
     // Broadcast live event to all connected browsers
     this.realtime.broadcast('USERS_UPDATED', { organizationId: orgId, userId: newUser.id });
     this.realtime.broadcast('META_ASSETS_UPDATED', { organizationId: orgId });
@@ -149,6 +158,11 @@ export class UsersService {
       where: { id: userId },
       data: { status }
     });
+
+    await this.cache.delPattern('users:*');
+    await this.cache.delPattern('auth:*');
+    await this.cache.delPattern('meta:*');
+    await this.cache.delPattern('reports:*');
 
     // Broadcast live event to all connected browsers
     this.realtime.broadcast('USERS_UPDATED', { organizationId: user.organizationId, userId });
@@ -191,6 +205,10 @@ export class UsersService {
       results.push(access);
     }
 
+    await this.cache.delPattern('users:*');
+    await this.cache.delPattern('meta:*');
+    await this.cache.delPattern('reports:*');
+
     // Broadcast live event to all connected browsers
     this.realtime.broadcast('USERS_UPDATED', { organizationId: user.organizationId, userId });
     this.realtime.broadcast('META_ASSETS_UPDATED', { organizationId: user.organizationId });
@@ -212,6 +230,10 @@ export class UsersService {
         adAccountId: adAccountId
       }
     });
+
+    await this.cache.delPattern('users:*');
+    await this.cache.delPattern('meta:*');
+    await this.cache.delPattern('reports:*');
 
     if (user) {
       this.realtime.broadcast('USERS_UPDATED', { organizationId: user.organizationId, userId });
@@ -246,6 +268,11 @@ export class UsersService {
 
     // 4. Delete user profile
     await this.prisma.userProfile.delete({ where: { id: userId } });
+
+    await this.cache.delPattern('users:*');
+    await this.cache.delPattern('auth:*');
+    await this.cache.delPattern('meta:*');
+    await this.cache.delPattern('reports:*');
 
     // 5. Broadcast realtime updates
     this.realtime.broadcast('USERS_UPDATED', { organizationId: user.organizationId, userId });

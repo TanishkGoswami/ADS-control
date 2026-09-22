@@ -101,6 +101,10 @@ class RealtimeClient {
       SWRCache.invalidate('meta-accounts');
       SWRCache.invalidate('meta-connections');
       SWRCache.invalidate('dashboard');
+    } else if (event.type === 'USERS_UPDATED') {
+      SWRCache.invalidate('users');
+      SWRCache.invalidate('meta-accounts');
+      SWRCache.invalidate('dashboard');
     } else if (event.type === 'DASHBOARD_UPDATED') {
       SWRCache.invalidate('dashboard');
     } else if (event.type === 'LEDGER_UPDATED') {

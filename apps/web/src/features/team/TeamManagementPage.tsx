@@ -64,22 +64,26 @@ export const TeamManagementPage: React.FC = () => {
   const [newUserRole, setNewUserRole] = useState<'ADS_MANAGER' | 'FINANCE' | 'ADMIN'>('ADS_MANAGER');
   const [formError, setFormError] = useState('');
 
-  // Queries
+  // Queries with zero stale time so mutations reflect immediately
   const { data: users = [], isLoading: isUsersLoading } = useQuery({
     queryKey: ['users'],
-    queryFn: () => fetchUsersApi()
+    queryFn: () => fetchUsersApi(),
+    staleTime: 0
   });
 
   const { data: allAdAccounts = [] } = useQuery({
     queryKey: ['meta-accounts-all'],
-    queryFn: () => fetchMetaAdAccounts()
+    queryFn: () => fetchMetaAdAccounts(),
+    staleTime: 0
   });
 
-  // Mutations
+  // Mutations with Optimistic Updates & Immediate Refetching
   const createUserMutation = useMutation({
     mutationFn: createUserApi,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await queryClient.refetchQueries({ queryKey: ['users'] });
+      await queryClient.refetchQueries({ queryKey: ['meta-accounts-all'] });
       setIsAddUserOpen(false);
       setNewUserName('');
       setNewUserEmail('');
@@ -94,33 +98,95 @@ export const TeamManagementPage: React.FC = () => {
   const updateStatusMutation = useMutation({
     mutationFn: ({ userId, status }: { userId: string; status: string }) =>
       updateUserStatusApi(userId, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+    onMutate: async ({ userId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['users'] });
+      const previousUsers = queryClient.getQueryData<UserProfileDto[]>(['users']);
+      queryClient.setQueryData<UserProfileDto[]>(['users'], (old = []) =>
+        old.map((u) => (u.id === userId ? { ...u, status } : u))
+      );
+      return { previousUsers };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['users'], context.previousUsers);
+      }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await queryClient.refetchQueries({ queryKey: ['users'] });
     }
   });
 
   const assignAccountsMutation = useMutation({
     mutationFn: ({ userId, adAccountIds }: { userId: string; adAccountIds: string[] }) =>
       assignAdAccountsApi(userId, adAccountIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['meta-accounts'] });
+    onMutate: async ({ userId, adAccountIds }) => {
+      await queryClient.cancelQueries({ queryKey: ['users'] });
+      const previousUsers = queryClient.getQueryData<UserProfileDto[]>(['users']);
+      const selectedAccounts = allAdAccounts.filter((a) => adAccountIds.includes(a.id));
+      queryClient.setQueryData<UserProfileDto[]>(['users'], (old = []) =>
+        old.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                assignedAccountsCount: adAccountIds.length,
+                assignedAccounts: selectedAccounts.map((a) => ({
+                  id: a.id,
+                  metaAdAccountId: a.metaAdAccountId,
+                  name: a.name,
+                  alias: a.internalAlias,
+                  status: a.normalizedStatus,
+                  balanceINR: (Number(a.currentTrackedBalanceMinor) / 100).toFixed(2),
+                  accessRole: 'OWNER'
+                }))
+              }
+            : u
+        )
+      );
+      return { previousUsers };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['users'], context.previousUsers);
+      }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await queryClient.invalidateQueries({ queryKey: ['meta-accounts'] });
+      await queryClient.invalidateQueries({ queryKey: ['meta-accounts-all'] });
+      await queryClient.refetchQueries({ queryKey: ['users'] });
+      await queryClient.refetchQueries({ queryKey: ['meta-accounts-all'] });
       setSelectedUserForAssign(null);
     }
   });
 
   const deleteUserMutation = useMutation({
     mutationFn: (userId: string) => deleteUserApi(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      queryClient.invalidateQueries({ queryKey: ['meta-accounts-all'] });
+    onMutate: async (userId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['users'] });
+      const previousUsers = queryClient.getQueryData<UserProfileDto[]>(['users']);
+      queryClient.setQueryData<UserProfileDto[]>(['users'], (old = []) =>
+        old.filter((u) => u.id !== userId)
+      );
+      return { previousUsers };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['users'], context.previousUsers);
+      }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await queryClient.refetchQueries({ queryKey: ['users'] });
+      await queryClient.refetchQueries({ queryKey: ['meta-accounts-all'] });
     }
   });
 
   // Real-time synchronization: refresh data instantly when any user is created/updated or Meta is synced
-  useRealtimeEvent(['USERS_UPDATED', 'META_ASSETS_UPDATED'], () => {
-    queryClient.invalidateQueries({ queryKey: ['users'] });
-    queryClient.invalidateQueries({ queryKey: ['meta-accounts-all'] });
+  useRealtimeEvent(['USERS_UPDATED', 'META_ASSETS_UPDATED'], async () => {
+    await queryClient.invalidateQueries({ queryKey: ['users'] });
+    await queryClient.refetchQueries({ queryKey: ['users'] });
+    await queryClient.refetchQueries({ queryKey: ['meta-accounts-all'] });
   });
 
   const handleCreateUserSubmit = (e: React.FormEvent) => {
@@ -663,6 +729,10 @@ const AssignAccountsModal: React.FC<AssignAccountsModalProps> = ({
   const initialSelected = new Set((user.assignedAccounts || []).map((a) => a.id));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(initialSelected);
   const [modalSearch, setModalSearch] = useState('');
+
+  React.useEffect(() => {
+    setSelectedIds(new Set((user.assignedAccounts || []).map((a) => a.id)));
+  }, [user]);
 
   const toggleAccount = (id: string) => {
     const next = new Set(selectedIds);
