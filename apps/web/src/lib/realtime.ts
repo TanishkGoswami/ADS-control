@@ -53,9 +53,10 @@ class RealtimeClient {
     }
 
     try {
-      // In Vite dev, /api/v1 is proxied to http://127.0.0.1:4000
-      const sseUrl = '/api/v1/realtime/stream';
-      this.eventSource = new EventSource(sseUrl);
+      const sseBase = import.meta.env.VITE_API_URL 
+        ? `${(import.meta.env.VITE_API_URL as string).replace(/\/+$/, '')}/api/v1/realtime/stream` 
+        : '/api/v1/realtime/stream';
+      this.eventSource = new EventSource(sseBase);
 
       this.eventSource.onopen = () => {
         this.isConnected = true;
