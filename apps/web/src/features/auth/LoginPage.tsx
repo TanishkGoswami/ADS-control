@@ -1,15 +1,11 @@
 import React, { useState } from 'react';
 import {
-  ShieldCheck,
   Lock,
   User,
   ArrowRight,
   AlertCircle,
   Eye,
   EyeOff,
-  Sparkles,
-  Layers,
-  KeyRound,
   Zap,
   TrendingUp,
   Wallet
@@ -57,17 +53,15 @@ export const LoginPage: React.FC = () => {
         <div className="absolute bottom-[-10%] right-[-10%] w-[550px] h-[550px] bg-gradient-to-tl from-[#0064e0]/15 via-[#c084fc]/15 to-transparent rounded-full blur-3xl" />
         <div className="absolute top-[30%] -left-[10%] w-[500px] h-[500px] bg-gradient-to-tr from-[#38bdf8]/20 to-transparent rounded-full blur-3xl" />
 
-        {/* Ethereal Orbital Geometric Rings (matching reference image) */}
+        {/* Ethereal Orbital Geometric Rings */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[750px] rounded-full border border-white/50 pointer-events-none opacity-60" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1050px] h-[1050px] rounded-full border border-white/40 pointer-events-none opacity-40" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1350px] h-[1350px] rounded-full border border-white/30 pointer-events-none opacity-25" />
       </div>
 
       {/* Top Left Brand Header Pill */}
-      <div className="absolute top-6 left-6 sm:top-8 sm:left-8 z-20 flex items-center gap-2.5 bg-white/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/80 shadow-[0_2px_10px_rgba(0,0,0,0.04)]">
-        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#0064e0] to-[#00a3ff] flex items-center justify-center text-white font-bold text-[11px] shadow-sm">
-          MB
-        </div>
+      <div className="absolute top-6 left-6 sm:top-8 sm:left-8 z-20 flex items-center gap-2.5 bg-white/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/80 shadow-[0_2px_10px_rgba(0,0,0,0.04)]">
+        <img src="/logo.png" alt="Logo" className="h-5 w-auto object-contain" />
         <span className="text-xs font-bold text-[#0f172a] tracking-tight">
           MetaBull Universe
         </span>
@@ -78,26 +72,17 @@ export const LoginPage: React.FC = () => {
 
       {/* Main Glassmorphic Login Card */}
       <div className="relative z-10 w-full max-w-[430px]">
-        <div className="relative bg-white/80 backdrop-blur-xl border border-white/90 rounded-[24px] shadow-[0_20px_50px_rgba(0,100,224,0.12),0_1px_3px_rgba(0,0,0,0.05)] p-7 sm:p-8 space-y-6">
-          {/* Card Top Icon Emblem */}
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="relative">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-b from-[#f8fafc] to-white border border-white shadow-[0_8px_20px_rgba(0,100,224,0.15)] flex items-center justify-center text-[#0064e0]">
-                <KeyRound className="w-6 h-6 stroke-[2.2]" />
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#0064e0] text-white flex items-center justify-center shadow-sm">
-                <Sparkles className="w-2.5 h-2.5" />
-              </div>
-            </div>
-
-            <div>
-              <h1 className="text-xl font-bold text-[#0f172a] tracking-tight">
-                Sign in with credentials
-              </h1>
-              <p className="text-xs text-[#64748b] mt-1 max-w-[300px] leading-relaxed">
-                Access your real-time Meta ad accounts, cashflow ledger & campaign telemetry.
-              </p>
-            </div>
+        <div className="relative bg-white/85 backdrop-blur-xl border border-white/90 rounded-[24px] shadow-[0_20px_50px_rgba(0,100,224,0.12),0_1px_3px_rgba(0,0,0,0.05)] p-7 sm:p-8 space-y-6">
+          {/* Card Top Logo */}
+          <div className="flex flex-col items-center text-center space-y-2">
+            <img
+              src="/logo.png"
+              alt="We Are Agency Logo"
+              className="h-12 w-auto object-contain drop-shadow-sm mb-1"
+            />
+            <h1 className="text-xl font-bold text-[#0f172a] tracking-tight">
+              Sign in with credentials
+            </h1>
           </div>
 
           {/* Error Notification Alert */}
@@ -131,19 +116,9 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-[#334155]">
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setError('Please contact your administrator to reset internal credentials.')}
-                  className="text-[11px] text-[#0064e0] hover:underline font-medium"
-                  tabIndex={-1}
-                >
-                  Forgot password?
-                </button>
-              </div>
+              <label className="block text-xs font-semibold text-[#334155]">
+                Password
+              </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#94a3b8]">
                   <Lock className="w-4 h-4" />
@@ -234,12 +209,8 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Security & Legal Footer */}
-          <div className="pt-2 flex items-center justify-between text-[11px] text-[#94a3b8] border-t border-[#f1f4f7]">
-            <div className="flex items-center gap-1.5 text-emerald-700 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>256-Bit Encrypted</span>
-            </div>
+          {/* Legal Footer */}
+          <div className="pt-2 flex items-center justify-center text-[11px] text-[#94a3b8] border-t border-[#f1f4f7]">
             <div className="flex items-center gap-2 font-sans">
               <Link to="/privacy" className="text-[#64748b] hover:text-[#0064e0] hover:underline transition-colors">Privacy</Link>
               <span>·</span>
