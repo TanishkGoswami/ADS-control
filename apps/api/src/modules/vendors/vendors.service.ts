@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
+import { CacheService } from '../../common/cache/cache.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { TransactionType, EntryType, toPaise, CreateVendorInput, RecordVendorFundingBatchInput, RecordVendorRepaymentInput } from '@ads-control/shared';
 
@@ -7,26 +8,31 @@ import { TransactionType, EntryType, toPaise, CreateVendorInput, RecordVendorFun
 export class VendorsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
     private readonly ledgerService: LedgerService
   ) {}
 
   async getVendors(organizationId?: string) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
-    return this.prisma.vendor.findMany({
-      where: { organizationId: orgId },
-      include: {
-        fundingBatches: true,
-        receivables: true
-      },
-      orderBy: { name: 'asc' }
-    });
+    const cacheKey = `vendors:list:${orgId}`;
+
+    return this.cache.wrap(cacheKey, async () => {
+      return this.prisma.vendor.findMany({
+        where: { organizationId: orgId },
+        include: {
+          fundingBatches: true,
+          receivables: true
+        },
+        orderBy: { name: 'asc' }
+      });
+    }, 60);
   }
 
   async createVendor(organizationId: string | undefined, input: CreateVendorInput) {
     const orgId = await this.prisma.resolveOrgId(organizationId);
     const existing = await this.prisma.vendor.findFirst({ where: { organizationId: orgId, vendorReference: input.vendorReference } });
     if (existing) throw new BadRequestException('Vendor reference already exists. Use a different code.');
-    return this.prisma.vendor.create({
+    const result = await this.prisma.vendor.create({
       data: {
         organizationId: orgId,
         vendorReference: input.vendorReference,
@@ -35,6 +41,10 @@ export class VendorsService {
         phone: input.phone
       }
     });
+
+    await this.cache.delPattern('vendors:*');
+    await this.cache.delPattern('reports:*');
+    return result;
   }
 
   /**
@@ -45,7 +55,7 @@ export class VendorsService {
     const orgId = await this.prisma.resolveOrgId(organizationId);
     const principalMinor = toPaise(input.principalAmountRupees);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const vendor = await tx.vendor.findFirst({ where: { id: input.vendorId, organizationId: orgId } });
       if (!vendor) throw new NotFoundException('Vendor not found');
 
@@ -78,6 +88,10 @@ export class VendorsService {
 
       return batch;
     }, { timeout: 15000 });
+
+    await this.cache.delPattern('vendors:*');
+    await this.cache.delPattern('reports:*');
+    return result;
   }
 
   /**
@@ -87,7 +101,7 @@ export class VendorsService {
     const orgId = await this.prisma.resolveOrgId(organizationId);
     const amountMinor = toPaise(input.amountRupees);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Find Vendor Batches
       const vendor = await tx.vendor.findFirst({
         where: { id: input.vendorId, organizationId: orgId },
@@ -177,5 +191,9 @@ export class VendorsService {
 
       return repayment;
     }, { timeout: 15000 });
+
+    await this.cache.delPattern('vendors:*');
+    await this.cache.delPattern('reports:*');
+    return result;
   }
 }
