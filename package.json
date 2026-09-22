@@ -5,6 +5,7 @@
   "description": "Meta Ads Operations & Financial Control System (In-House)",
   "scripts": {
     "build": "pnpm --recursive run build",
+    "start": "node apps/api/dist/main.js",
     "dev": "pnpm --parallel run dev",
     "dev:api": "pnpm --filter @ads-control/api run dev",
     "dev:web": "pnpm --filter @ads-control/web run dev",
