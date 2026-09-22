@@ -703,7 +703,10 @@ export const MetaAssetsPage: React.FC = () => {
                               <div className="text-xs text-[#64748b] flex items-center gap-2 mt-1">
                                 <span>Portfolio: <strong className="text-[#334155] font-medium">{account.businessPortfolio?.name || 'Primary'}</strong></span>
                                 <span>•</span>
-                                <span>Currency: <strong className="text-[#334155] font-medium">{account.currencyCode || 'INR'}</strong></span>
+                                <span className="inline-flex items-center gap-0.5 font-medium text-[#334155]">
+                                  <span>₹</span>
+                                  <span>{account.currencyCode || 'INR'}</span>
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -975,7 +978,7 @@ export const MetaAssetsPage: React.FC = () => {
                                     </div>
                                     <div className="flex justify-between items-center">
                                       <span className="text-[#64748b]">Billing Currency:</span>
-                                      <span className="font-bold text-[#0f172a]">{account.currencyCode || 'INR'}</span>
+                                      <span className="font-bold text-[#0f172a]">₹ {account.currencyCode || 'INR'}</span>
                                     </div>
                                   </div>
                                 </div>
