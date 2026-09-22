@@ -15,8 +15,12 @@ import {
   LeftoverResolutionAction
 } from '@ads-control/shared';
 
+const apiBase = import.meta.env.VITE_API_URL 
+  ? `${(import.meta.env.VITE_API_URL as string).replace(/\/+$/, '')}/api/v1` 
+  : '/api/v1';
+
 export const apiClient = axios.create({
-  baseURL: '/api/v1',
+  baseURL: apiBase,
   headers: {
     'Content-Type': 'application/json'
   }
