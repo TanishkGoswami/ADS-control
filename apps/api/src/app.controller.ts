@@ -30,538 +30,284 @@ export class AppController {
   @Public()
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
-  getRootDashboard(@Res() res: Response) {
+  getRootTerminal(@Res() res: Response) {
     const metrics = this.telemetry.getMetrics();
     const env = process.env.NODE_ENV || 'development';
     const port = process.env.PORT || 4000;
     const metaGraphVersion = process.env.META_GRAPH_API_VERSION || 'v22.0';
-    const supabaseConfigured = !!process.env.SUPABASE_URL;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ads Control API Engine · Live Operations</title>
+  <title>ads-control-api ~ terminal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --bg-base: #090d16;
-      --bg-surface: #0f172a;
-      --bg-card: rgba(17, 24, 39, 0.75);
-      --border: rgba(255, 255, 255, 0.08);
-      --border-accent: rgba(59, 130, 246, 0.3);
-      --text-primary: #f8fafc;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --primary: #3b82f6;
-      --primary-glow: rgba(59, 130, 246, 0.25);
-      --emerald: #10b981;
-      --emerald-glow: rgba(16, 185, 129, 0.2);
-      --amber: #f59e0b;
-      --purple: #8b5cf6;
-      --rose: #f43f5e;
-    }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: var(--bg-base);
-      color: var(--text-primary);
+      background-color: #07090e;
+      color: #cbd5e1;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.6;
       min-height: 100vh;
       display: flex;
-      flex-direction: column;
-      line-height: 1.5;
-      background-image: 
-        radial-gradient(circle at 15% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
-        radial-gradient(circle at 85% 85%, rgba(139, 92, 246, 0.1) 0%, transparent 45%),
-        radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 60%);
-      background-attachment: fixed;
-    }
-
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 2.5rem 1.5rem;
-      width: 100%;
-    }
-
-    /* Header */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 2rem;
-      padding-bottom: 1.5rem;
-      border-bottom: 1px solid var(--border);
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    .brand-logo {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 50%, #60a5fa 100%);
-      display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 20px var(--primary-glow);
-      font-weight: 800;
-      font-size: 1.3rem;
-      color: white;
-    }
-    .brand-title {
-      font-size: 1.4rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      background: linear-gradient(to right, #ffffff, #93c5fd);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .brand-subtitle {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
+      padding: 1.5rem;
     }
 
-    /* Live Badge */
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.4rem 0.9rem;
-      border-radius: 9999px;
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      color: #34d399;
-      font-size: 0.82rem;
-      font-weight: 600;
-      box-shadow: 0 0 15px var(--emerald-glow);
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: #10b981;
-      box-shadow: 0 0 10px #10b981;
-      animation: pulse 1.8s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.35); opacity: 0.6; }
-    }
-
-    /* Action Buttons */
-    .btn-group {
-      display: flex;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.6rem 1.1rem;
+    .terminal-window {
+      width: 100%;
+      max-width: 920px;
+      background: #0d1117;
+      border: 1px solid #21262d;
       border-radius: 10px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      cursor: pointer;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #2563eb, #3b82f6);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      box-shadow: 0 4px 14px var(--primary-glow);
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--primary-glow);
-    }
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.09);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    /* Metric Cards Grid */
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-    .card {
-      background: var(--bg-card);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 1.25rem;
-      transition: transform 0.2s ease, border-color 0.2s ease;
-    }
-    .card:hover {
-      border-color: var(--border-accent);
-      transform: translateY(-2px);
-    }
-    .card-label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .card-value {
-      font-size: 1.5rem;
-      font-weight: 800;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-primary);
-    }
-    .card-sub {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      margin-top: 0.25rem;
-    }
-
-    /* Services Status Strip */
-    .services-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-    .service-card {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1rem 1.2rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .service-info {
-      display: flex;
-      align-items: center;
-      gap: 0.8rem;
-    }
-    .service-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-    }
-    .service-title {
-      font-size: 0.88rem;
-      font-weight: 600;
-    }
-    .service-meta {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-    }
-    .service-tag {
-      font-size: 0.7rem;
-      font-weight: 700;
-      padding: 0.2rem 0.6rem;
-      border-radius: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .tag-active { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-    .tag-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-    .tag-purple { background: rgba(139, 92, 246, 0.15); color: #c084fc; }
-
-    /* Live Requests Section */
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-    .section-title {
-      font-size: 1.1rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-    }
-    .live-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.75rem;
-      color: var(--emerald);
-      font-weight: 600;
-    }
-
-    .table-container {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.9), 0 0 25px rgba(59, 130, 246, 0.04);
       overflow: hidden;
-      margin-bottom: 2rem;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
-      font-size: 0.82rem;
-    }
-    th {
-      background: rgba(255, 255, 255, 0.02);
-      padding: 0.75rem 1rem;
-      color: var(--text-muted);
-      font-weight: 600;
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-bottom: 1px solid var(--border);
-    }
-    td {
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-secondary);
-    }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255, 255, 255, 0.02); color: var(--text-primary); }
 
-    .method-badge {
-      display: inline-block;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.7rem;
+    /* Terminal Titlebar */
+    .terminal-header {
+      background: #161b22;
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #21262d;
+      user-select: none;
+    }
+    .terminal-buttons {
+      display: flex;
+      gap: 7px;
+    }
+    .btn-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+    .btn-close { background: #ff5f56; }
+    .btn-min { background: #ffbd2e; }
+    .btn-max { background: #27c93f; }
+    .terminal-title {
+      margin: 0 auto;
+      color: #8b949e;
+      font-size: 12px;
+      font-weight: 500;
+      padding-right: 42px;
+    }
+
+    /* Terminal Body */
+    .terminal-body {
+      padding: 1.25rem 1.5rem;
+      max-height: 75vh;
+      overflow-y: auto;
+    }
+
+    .ascii-banner {
+      color: #58a6ff;
+      font-size: 11px;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+      white-space: pre;
       font-weight: 700;
     }
-    .method-GET { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-    .method-POST { background: rgba(16, 185, 129, 0.2); color: #34d399; }
-    .method-PATCH { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-    .method-DELETE { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
 
-    .status-code { font-weight: 700; }
-    .status-200, .status-201, .status-204 { color: #34d399; }
-    .status-400, .status-401, .status-404 { color: #fbbf24; }
-    .status-500 { color: #f43f5e; }
+    .line {
+      margin-bottom: 0.25rem;
+      word-break: break-all;
+    }
+    .text-green { color: #3fb950; }
+    .text-blue { color: #58a6ff; }
+    .text-purple { color: #bc8cff; }
+    .text-yellow { color: #d29922; }
+    .text-red { color: #f85149; }
+    .text-muted { color: #6e7681; }
+    .text-white { color: #f0f6fc; font-weight: 600; }
+    
+    .divider {
+      height: 1px;
+      background: #21262d;
+      margin: 1rem 0;
+    }
 
-    /* Footer */
-    .footer {
-      margin-top: auto;
-      padding-top: 2rem;
-      border-top: 1px solid var(--border);
+    .prompt {
+      color: #3fb950;
+      font-weight: 700;
+    }
+    .path {
+      color: #58a6ff;
+    }
+
+    /* Interactive links */
+    a.term-link {
+      color: #58a6ff;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+    a.term-link:hover {
+      color: #79c0ff;
+    }
+
+    /* Logs stream table */
+    .log-row {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
-      font-size: 0.78rem;
-      color: var(--text-muted);
+      gap: 12px;
+      padding: 2px 0;
+      font-size: 12.5px;
+    }
+    .log-time { color: #6e7681; flex-shrink: 0; }
+    .log-method { font-weight: 700; width: 50px; flex-shrink: 0; }
+    .method-get { color: #58a6ff; }
+    .method-post { color: #3fb950; }
+    .method-patch { color: #d29922; }
+    .method-delete { color: #f85149; }
+    .log-path { color: #f0f6fc; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-status { font-weight: 700; flex-shrink: 0; }
+    .status-2xx { color: #3fb950; }
+    .status-4xx { color: #d29922; }
+    .status-5xx { color: #f85149; }
+    .log-lat { color: #8b949e; flex-shrink: 0; width: 65px; text-align: right; }
+
+    /* Cursor animation */
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 15px;
+      background-color: #58a6ff;
+      vertical-align: middle;
+      margin-left: 4px;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
-    <header class="header">
-      <div class="brand">
-        <div class="brand-logo">⚡</div>
-        <div>
-          <h1 class="brand-title">Meta Ads Operations & Financial Control Engine</h1>
-          <div class="brand-subtitle">
-            <span>In-House High-Frequency Ledger & Meta API v22.0 Gateway</span>
-            <span>•</span>
-            <span class="status-badge"><span class="status-dot"></span> API LIVE & OPERATIONAL</span>
-          </div>
-        </div>
+  <div class="terminal-window">
+    <div class="terminal-header">
+      <div class="terminal-buttons">
+        <div class="btn-dot btn-close"></div>
+        <div class="btn-dot btn-min"></div>
+        <div class="btn-dot btn-max"></div>
       </div>
-      <div class="btn-group">
-        <a href="/api/docs" class="btn btn-primary" target="_blank">
-          📚 Swagger API Documentation
-        </a>
-        <a href="https://metabull-ads-budget-managment-git-main-designwithtanishk.vercel.app" class="btn btn-secondary" target="_blank">
-          🖥️ Open Web App (Vercel)
-        </a>
-      </div>
-    </header>
-
-    <!-- Top Live Metrics Strip -->
-    <div class="metrics-grid">
-      <div class="card">
-        <div class="card-label">Server Uptime <span>⏱️</span></div>
-        <div class="card-value" id="uptime-val">${Math.floor(metrics.uptimeSec / 60)}m ${metrics.uptimeSec % 60}s</div>
-        <div class="card-sub">Continuous Operational Stream</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Total Processed Requests <span>📊</span></div>
-        <div class="card-value" id="requests-val">${metrics.totalRequests.toLocaleString()}</div>
-        <div class="card-sub">Since process bootstrap</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Avg Processing Latency <span>⚡</span></div>
-        <div class="card-value" id="latency-val">${metrics.avgLatencyMs} <span style="font-size: 0.9rem; color: var(--text-muted);">ms</span></div>
-        <div class="card-sub">Double-entry & DB pipeline</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Memory Heap Footprint <span>💾</span></div>
-        <div class="card-value" id="memory-val">${metrics.memoryHeapMb} <span style="font-size: 0.9rem; color: var(--text-muted);">MB</span></div>
-        <div class="card-sub">V8 Garbage Collected Heap</div>
-      </div>
+      <div class="terminal-title">ads-control-api &mdash; bash &mdash; port ${port}</div>
     </div>
 
-    <!-- Active Connected Micro-Engines -->
-    <div class="services-grid">
-      <div class="service-card">
-        <div class="service-info">
-          <div class="service-icon">🚀</div>
-          <div>
-            <div class="service-title">NestJS Core Runtime</div>
-            <div class="service-meta">${metrics.nodeVersion} · Port ${port} (${env})</div>
-          </div>
-        </div>
-        <span class="service-tag tag-active">HEALTHY</span>
+    <div class="terminal-body">
+      <div class="ascii-banner">
+  ___ ___  ___   ___ ___  _  _ _____ ___  ___  _     
+ /   \\   \\/ __| / __/ _ \\| \\| |_   _| _ \\/ _ \\| |    
+| - | |) \\__ \\| (_| (_) | .\` | | | |   / (_) | |__  
+|_|_/___/|___/ \\___\\___/|_|\\_| |_| |_|_\\\\___/|____| 
+                                                     </div>
+
+      <div class="line">
+        <span class="prompt">server@ads-control</span>:<span class="path">~</span>$ ./api-daemon --status
       </div>
-      <div class="service-card">
-        <div class="service-info">
-          <div class="service-icon">🗄️</div>
-          <div>
-            <div class="service-title">Supabase PostgreSQL</div>
-            <div class="service-meta">Pooler (IPv4 Mode) · Active</div>
-          </div>
-        </div>
-        <span class="service-tag tag-active">CONNECTED</span>
+
+      <div class="line text-green" style="margin-top: 0.5rem;">
+        [OK] System initialized. Core engine active on 0.0.0.0:${port} (${env})
       </div>
-      <div class="service-card">
-        <div class="service-info">
-          <div class="service-icon">📡</div>
-          <div>
-            <div class="service-title">Meta Marketing API</div>
-            <div class="service-meta">Graph Version ${metaGraphVersion} Gateway</div>
-          </div>
-        </div>
-        <span class="service-tag tag-blue">AUTHENTICATED</span>
+
+      <div class="divider"></div>
+
+      <!-- Quick System Info -->
+      <div class="line"><span class="text-muted">&bull; runtime:</span> <span class="text-white">${metrics.nodeVersion} (NestJS 11 Core)</span></div>
+      <div class="line"><span class="text-muted">&bull; uptime:</span> <span class="text-white" id="uptime-val">${Math.floor(metrics.uptimeSec / 60)}m ${metrics.uptimeSec % 60}s</span> &nbsp;|&nbsp; <span class="text-muted">memory:</span> <span class="text-white" id="memory-val">${metrics.memoryHeapMb} MB</span></div>
+      <div class="line"><span class="text-muted">&bull; database:</span> <span class="text-green">connected</span> (Supabase PostgreSQL Pooler)</div>
+      <div class="line"><span class="text-muted">&bull; meta_api:</span> <span class="text-blue">authenticated</span> (Graph API ${metaGraphVersion} Gateway)</div>
+      <div class="line"><span class="text-muted">&bull; realtime:</span> <span class="text-purple">active</span> (/api/v1/realtime/stream)</div>
+
+      <div class="divider"></div>
+
+      <!-- Quick Links in terminal style -->
+      <div class="line"><span class="text-muted">&bull; swagger_docs:</span> <a href="/api/docs" target="_blank" class="term-link">/api/docs</a></div>
+      <div class="line"><span class="text-muted">&bull; web_frontend:</span> <a href="https://metabull-ads-budget-managment-git-main-designwithtanishk.vercel.app" target="_blank" class="term-link">https://metabull-ads-budget-managment...vercel.app</a></div>
+      <div class="line"><span class="text-muted">&bull; total_requests:</span> <span class="text-white" id="requests-val">${metrics.totalRequests}</span> &nbsp;|&nbsp; <span class="text-muted">avg_latency:</span> <span class="text-white" id="latency-val">${metrics.avgLatencyMs}ms</span></div>
+
+      <div class="divider"></div>
+
+      <div class="line text-muted" style="margin-bottom: 0.5rem;">
+        # Live HTTP Telemetry Stream (tail -f access.log)
       </div>
-      <div class="service-card">
-        <div class="service-info">
-          <div class="service-icon">⚡</div>
-          <div>
-            <div class="service-title">Realtime SSE Stream</div>
-            <div class="service-meta">Broadcast Channel Live</div>
+
+      <!-- Telemetry Stream Rows -->
+      <div id="logs-container">
+        ${metrics.records.length > 0 ? metrics.records.map(r => `
+          <div class="log-row">
+            <span class="log-time">[${r.timestamp}]</span>
+            <span class="log-method method-${r.method.toLowerCase()}">${r.method}</span>
+            <span class="log-path">${r.path}</span>
+            <span class="log-status status-${r.statusCode < 300 ? '2xx' : r.statusCode < 500 ? '4xx' : '5xx'}">${r.statusCode}</span>
+            <span class="log-lat">${r.durationMs}ms</span>
           </div>
-        </div>
-        <span class="service-tag tag-purple">STREAMING</span>
+        `).join('') : `
+          <div class="log-row text-muted">
+            <span>[--:--:--]</span>
+            <span style="font-style: italic;">Awaiting incoming HTTP requests...</span>
+          </div>
+        `}
+      </div>
+
+      <div class="line" style="margin-top: 1rem;">
+        <span class="prompt">server@ads-control</span>:<span class="path">~</span>$ <span class="cursor"></span>
       </div>
     </div>
-
-    <!-- Live Telemetry & API Calls Feed -->
-    <div class="section-header">
-      <div class="section-title">
-        <span>Live API Traffic & Telemetry Stream</span>
-      </div>
-      <div class="live-indicator">
-        <span class="status-dot"></span> AUTO-REFRESHING LIVE (2s)
-      </div>
-    </div>
-
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Method</th>
-            <th>Endpoint Route</th>
-            <th>Status</th>
-            <th>Latency</th>
-            <th>Client IP</th>
-          </tr>
-        </thead>
-        <tbody id="telemetry-table-body">
-          ${metrics.records.length > 0 ? metrics.records.map(r => `
-            <tr>
-              <td>${r.timestamp}</td>
-              <td><span class="method-badge method-${r.method}">${r.method}</span></td>
-              <td style="color: var(--text-primary); font-weight: 500;">${r.path}</td>
-              <td class="status-code status-${r.statusCode}">${r.statusCode}</td>
-              <td>${r.durationMs}ms</td>
-              <td style="color: var(--text-muted);">${r.ip}</td>
-            </tr>
-          `).join('') : `
-            <tr>
-              <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                Awaiting incoming API requests... Send any request to see live telemetry stream.
-              </td>
-            </tr>
-          `}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <div>MetaBull Ads Control System · In-House Financial Operations Platform</div>
-      <div>Environment: <strong style="color: var(--emerald);">${env.toUpperCase()}</strong> · Port: <strong>${port}</strong></div>
-    </footer>
   </div>
 
   <script>
     let uptimeSeconds = ${metrics.uptimeSec};
 
-    // Live Uptime Ticker
+    // Live Uptime Clock
     setInterval(() => {
       uptimeSeconds++;
       const m = Math.floor(uptimeSeconds / 60);
       const s = uptimeSeconds % 60;
       const h = Math.floor(m / 60);
       const mins = m % 60;
-      document.getElementById('uptime-val').innerText = h > 0 ? h + 'h ' + mins + 'm ' + s + 's' : mins + 'm ' + s + 's';
+      const el = document.getElementById('uptime-val');
+      if (el) {
+        el.innerText = h > 0 ? h + 'h ' + mins + 'm ' + s + 's' : mins + 'm ' + s + 's';
+      }
     }, 1000);
 
-    // Live Telemetry Polling (every 2.5s)
-    async function updateTelemetry() {
+    // Live Log Stream Polling (every 2s)
+    async function updateStream() {
       try {
         const res = await fetch('/api/telemetry/data');
         if (res.ok) {
           const data = await res.json();
-          document.getElementById('requests-val').innerText = data.totalRequests.toLocaleString();
-          document.getElementById('latency-val').innerHTML = data.avgLatencyMs + ' <span style="font-size: 0.9rem; color: var(--text-muted);">ms</span>';
-          document.getElementById('memory-val').innerHTML = data.memoryHeapMb + ' <span style="font-size: 0.9rem; color: var(--text-muted);">MB</span>';
+          const reqEl = document.getElementById('requests-val');
+          const latEl = document.getElementById('latency-val');
+          const memEl = document.getElementById('memory-val');
+          const logEl = document.getElementById('logs-container');
 
-          if (data.records && data.records.length > 0) {
-            const rows = data.records.map(r => \`
-              <tr>
-                <td>\${r.timestamp}</td>
-                <td><span class="method-badge method-\${r.method}">\${r.method}</span></td>
-                <td style="color: var(--text-primary); font-weight: 500;">\${r.path}</td>
-                <td class="status-code status-\${r.statusCode}">\${r.statusCode}</td>
-                <td>\${r.durationMs}ms</td>
-                <td style="color: var(--text-muted);">\${r.ip}</td>
-              </tr>
-            \`).join('');
-            document.getElementById('telemetry-table-body').innerHTML = rows;
+          if (reqEl) reqEl.innerText = data.totalRequests;
+          if (latEl) latEl.innerText = data.avgLatencyMs + 'ms';
+          if (memEl) memEl.innerText = data.memoryHeapMb + ' MB';
+
+          if (logEl && data.records && data.records.length > 0) {
+            logEl.innerHTML = data.records.map(function(r) {
+              var statusClass = r.statusCode < 300 ? 'status-2xx' : (r.statusCode < 500 ? 'status-4xx' : 'status-5xx');
+              return '<div class="log-row">' +
+                '<span class="log-time">[' + r.timestamp + ']</span>' +
+                '<span class="log-method method-' + r.method.toLowerCase() + '">' + r.method + '</span>' +
+                '<span class="log-path">' + r.path + '</span>' +
+                '<span class="log-status ' + statusClass + '">' + r.statusCode + '</span>' +
+                '<span class="log-lat">' + r.durationMs + 'ms</span>' +
+              '</div>';
+            }).join('');
           }
         }
       } catch (err) {}
     }
 
-    setInterval(updateTelemetry, 2500);
+    setInterval(updateStream, 2000);
   </script>
 </body>
 </html>`;
