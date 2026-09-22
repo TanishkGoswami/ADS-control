@@ -244,6 +244,14 @@ export class MetaService {
   }
 
   private extractEffectiveBalanceMinor(acc: any, fallback: bigint = 0n): bigint {
+    // 1. Postpay accounts (Credit card / Auto threshold billing, is_prepay_account === false):
+    // In Meta Graph API, 'balance' on postpay accounts represents unbilled spend due on threshold,
+    // NOT available prepaid funds. Available prepaid funds is ₹0.00.
+    if (acc.is_prepay_account === false) {
+      return 0n;
+    }
+
+    // 2. Prepay accounts: parse display string from funding source details
     const displayString = acc.funding_source_details?.display_string || '';
     if (/available/i.test(displayString) || /prepaid/i.test(displayString) || /balance/i.test(displayString)) {
       const match = displayString.match(/([0-9,]+\.?[0-9]*)/);
@@ -252,6 +260,8 @@ export class MetaService {
         return BigInt(Math.round(cleanNum * 100));
       }
     }
+
+    // 3. Prepay accounts with spend_cap and amount_spent
     if (acc.is_prepay_account && acc.spend_cap && acc.amount_spent) {
       const cap = BigInt(acc.spend_cap || '0');
       const spent = BigInt(acc.amount_spent || '0');
@@ -259,10 +269,13 @@ export class MetaService {
         return cap - spent;
       }
     }
-    if (/^\d+$/.test(String(acc.balance ?? '')) && BigInt(acc.balance) > 0n) {
+
+    // 4. Prepay accounts direct balance
+    if (acc.is_prepay_account && /^\d+$/.test(String(acc.balance ?? '')) && BigInt(acc.balance) > 0n) {
       return BigInt(acc.balance);
     }
-    return fallback;
+
+    return 0n;
   }
 
   async refreshAdAccount(organizationId: string, adAccountId: string) {
