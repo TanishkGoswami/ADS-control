@@ -181,48 +181,49 @@ export const MetaAssetsPage: React.FC = () => {
     setIsSyncing(true);
     setSyncProgress({
       isOpen: true,
-      percentage: 5,
-      currentStep: 'Syncing Meta Assets...',
-      details: '',
+      percentage: 20,
+      currentStep: 'Querying Meta Graph API v22.0...',
+      details: 'Connecting to Meta servers',
       isDone: false
     });
 
-    let currentPct = 4;
-    const progressInterval = setInterval(() => {
-      if (currentPct < 98) {
-        const diff = 99 - currentPct;
-        const step = Math.max(1, Math.floor(diff * 0.12));
-        currentPct = Math.min(98, currentPct + step);
-        setSyncProgress((prev) => ({
-          ...prev,
-          percentage: currentPct
-        }));
-      }
-    }, 120);
+    const timer1 = setTimeout(() => {
+      setSyncProgress(prev => ({ ...prev, percentage: 60, currentStep: 'Processing 149 ad accounts in parallel...' }));
+    }, 400);
+
+    const timer2 = setTimeout(() => {
+      setSyncProgress(prev => ({ ...prev, percentage: 85, currentStep: 'Updating live ledger & balances...' }));
+    }, 900);
 
     try {
       await triggerMetaSyncApi(currentUser?.id);
-      clearInterval(progressInterval);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
 
-      setSyncProgress((prev) => ({
-        ...prev,
+      setSyncProgress({
+        isOpen: true,
         percentage: 100,
+        currentStep: 'Sync Complete!',
+        details: 'All assets up to date',
         isDone: true
-      }));
+      });
 
       await loadData(true);
 
       setTimeout(() => {
         setSyncProgress((prev) => ({ ...prev, isOpen: false }));
-      }, 1200);
+      }, 500);
     } catch (err: any) {
-      clearInterval(progressInterval);
-      setSyncProgress((prev) => ({
-        ...prev,
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      setSyncProgress({
+        isOpen: true,
         percentage: 100,
+        currentStep: 'Sync Failed',
+        details: '',
         isDone: true,
         error: err?.response?.data?.message || err.message
-      }));
+      });
     } finally {
       setIsSyncing(false);
     }

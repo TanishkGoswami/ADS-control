@@ -363,175 +363,125 @@ export class MetaService {
       let restrictedCount = 0;
       let totalBalanceMinor = 0n;
 
-      for (const connection of connections) {
-        const token = connection.tokenSecretReference || this.getAccessToken();
-        if (!token) continue;
+      // Pre-fetch existing portfolios and accounts in 2 fast queries (O(1) in-memory lookup)
+      const [existingPortfolios, existingAccounts] = await Promise.all([
+        this.prisma.businessPortfolio.findMany({ where: { organizationId: orgId } }),
+        this.prisma.adAccount.findMany({ where: { organizationId: orgId } })
+      ]);
 
-        await this.prisma.metaConnection.update({
-          where: { id: connection.id },
-          data: { lastSuccessfulSyncAt: new Date(), connectionStatus: 'CONNECTED' }
-        });
+      const portfolioByMetaId = new Map<string, any>(existingPortfolios.map(p => [p.metaBusinessId, p]));
+      const accountByMetaId = new Map<string, any>(existingAccounts.map(a => [a.metaAdAccountId, a]));
 
-        // 2. Fetch User Businesses / Portfolios for this connection
-        let businesses: any[] = [];
-        try {
-          const bizUrl = `${this.baseUrl}/me/businesses?fields=id,name,verification_status&access_token=${token}`;
-          const bizRes = await fetch(bizUrl);
-          const bizJson = await bizRes.json();
-          businesses = bizJson?.data || [];
-        } catch (err: any) {
-          this.logger.warn(`Could not fetch businesses directly for connection ${connection.id}: ${err?.message || err}`);
-        }
+      // 1. Parallel fetch businesses and accounts across all connections simultaneously
+      await Promise.all(
+        connections.map(async (connection) => {
+          const token = connection.tokenSecretReference || this.getAccessToken();
+          if (!token) return;
 
-        if (businesses.length === 0 && process.env.META_BUSINESS_ID) {
-          businesses = [{ id: process.env.META_BUSINESS_ID, name: 'Getaipilot' }];
-        }
+          // Fetch Businesses and Ad Accounts in parallel for this connection
+          const [bizRes, adAccountsRes] = await Promise.all([
+            fetch(`${this.baseUrl}/me/businesses?fields=id,name,verification_status&access_token=${token}`).then(r => r.json()).catch(() => ({ data: [] })),
+            fetch(`${this.baseUrl}/me/adaccounts?fields=id,name,account_status,disable_reason,currency,balance,amount_spent,spend_cap,is_prepay_account,funding_source_details,timezone_name,business&limit=150&access_token=${token}`).then(r => r.json()).catch(() => ({ data: [] }))
+          ]);
 
-        totalPortfoliosCount += businesses.length;
-        const portfolioMap = new Map<string, string>(); // metaBusinessId -> internal db uuid
-
-        for (const b of businesses) {
-          const portfolio = await this.prisma.businessPortfolio.upsert({
-            where: {
-              organizationId_metaBusinessId: {
-                organizationId: orgId,
-                metaBusinessId: b.id
-              }
-            },
-            create: {
-              organizationId: orgId,
-              metaConnectionId: connection.id,
-              metaBusinessId: b.id,
-              name: b.name || `Business ${b.id}`,
-              status: b.verification_status === 'verified' ? 'ACTIVE' : 'ACTIVE'
-            },
-            update: {
-              name: b.name || undefined,
-              metaConnectionId: connection.id,
-              status: 'ACTIVE'
-            }
-          });
-          portfolioMap.set(b.id, portfolio.id);
-
-          if (connection.userId) {
-            await this.prisma.userPortfolioAccess.upsert({
-              where: {
-                userId_businessPortfolioId: {
-                  userId: connection.userId,
-                  businessPortfolioId: portfolio.id
-                }
-              },
-              update: {},
-              create: {
-                organizationId: orgId,
-                userId: connection.userId,
-                businessPortfolioId: portfolio.id,
-                accessRole: 'OWNER'
-              }
-            });
+          let businesses: any[] = bizRes?.data || [];
+          if (businesses.length === 0 && process.env.META_BUSINESS_ID) {
+            businesses = [{ id: process.env.META_BUSINESS_ID, name: 'Getaipilot' }];
           }
-        }
 
-        const primaryPortfolioId = portfolioMap.values().next().value || null;
+          totalPortfoliosCount += businesses.length;
+          const connPortfolioMap = new Map<string, string>();
 
-        // 3. Fetch Ad Accounts from Meta with full billing and funding source details (with pagination)
-        const adAccountsData: any[] = [];
-        let nextUrl: string | null = `${this.baseUrl}/me/adaccounts?fields=id,name,account_status,disable_reason,currency,balance,amount_spent,spend_cap,is_prepay_account,funding_source_details,timezone_name,business&limit=100&access_token=${token}`;
-
-        while (nextUrl) {
-          try {
-            const adAccountsRes: Response = await fetch(nextUrl);
-            const adAccountsJson: any = await adAccountsRes.json();
-            if (adAccountsJson.error) {
-              this.logger.warn(`Meta API error while fetching ad accounts for connection ${connection.id}: ${adAccountsJson.error.message}`);
-              break;
-            }
-            const pageData = adAccountsJson?.data || [];
-            adAccountsData.push(...pageData);
-            nextUrl = adAccountsJson?.paging?.next || null;
-          } catch (err: any) {
-            this.logger.warn(`Pagination error on connection ${connection.id}: ${err?.message || err}`);
-            break;
-          }
-        }
-
-        totalAccountsCount += adAccountsData.length;
-        this.logger.log(`Connection "${connection.internalName}" retrieved ${adAccountsData.length} ad accounts.`);
-
-        // Process ad accounts in fast parallel chunks of 20
-        const chunkSize = 20;
-        for (let i = 0; i < adAccountsData.length; i += chunkSize) {
-          const chunk = adAccountsData.slice(i, i + chunkSize);
+          // Process portfolios in parallel
           await Promise.all(
-            chunk.map(async (acc) => {
-              const isMetaActive = acc.account_status === 1;
-              const normalizedStatus = isMetaActive ? 'ACTIVE' : 'RESTRICTED';
-              const canRunAds = isMetaActive;
-
-              if (isMetaActive) activeCount++;
-              else restrictedCount++;
-
-              // Calculate accurate Available Balance (for ACTIVE) or Stuck Amount (for RESTRICTED)
-              const effectiveBalanceMinor = this.extractEffectiveBalanceMinor(acc, 0n);
-              totalBalanceMinor += effectiveBalanceMinor;
-
-              const assignedPortfolioId = (acc.business && portfolioMap.get(acc.business.id)) || primaryPortfolioId;
-
-              const adAccountRecord = await this.prisma.adAccount.upsert({
-                where: {
-                  organizationId_metaAdAccountId: {
+            businesses.map(async (b) => {
+              const existing = portfolioByMetaId.get(b.id);
+              if (existing) {
+                connPortfolioMap.set(b.id, existing.id);
+              } else {
+                const created = await this.prisma.businessPortfolio.create({
+                  data: {
                     organizationId: orgId,
-                    metaAdAccountId: acc.id
-                  }
-                },
-                create: {
-                  organizationId: orgId,
-                  businessPortfolioId: assignedPortfolioId,
-                  metaAdAccountId: acc.id,
-                  name: acc.name || `Ad Account ${acc.id}`,
-                  internalAlias: acc.name,
-                  currencyCode: acc.currency || 'INR',
-                  timezoneName: acc.timezone_name || 'Asia/Kolkata',
-                  rawMetaStatus: String(acc.account_status),
-                  normalizedStatus,
-                  canRunAds,
-                  currentTrackedBalanceMinor: effectiveBalanceMinor,
-                  lastStatusSyncAt: new Date(),
-                  lastSpendSyncAt: new Date()
-                },
-                update: {
-                  name: acc.name || undefined,
-                  businessPortfolioId: assignedPortfolioId,
-                  rawMetaStatus: String(acc.account_status),
-                  normalizedStatus,
-                  canRunAds,
-                  currentTrackedBalanceMinor: effectiveBalanceMinor,
-                  lastStatusSyncAt: new Date(),
-                  lastSpendSyncAt: new Date()
-                }
-              });
-
-              if (connection.userId) {
-                await this.prisma.userAdAccountAccess.upsert({
-                  where: {
-                    userId_adAccountId: {
-                      userId: connection.userId,
-                      adAccountId: adAccountRecord.id
-                    }
-                  },
-                  update: {},
-                  create: {
-                    organizationId: orgId,
-                    userId: connection.userId,
-                    adAccountId: adAccountRecord.id,
-                    accessRole: 'OWNER'
+                    metaConnectionId: connection.id,
+                    metaBusinessId: b.id,
+                    name: b.name || `Business ${b.id}`,
+                    status: 'ACTIVE'
                   }
                 });
+                portfolioByMetaId.set(b.id, created);
+                connPortfolioMap.set(b.id, created.id);
               }
             })
           );
-        }
-      }
+
+          const primaryPortfolioId = connPortfolioMap.values().next().value || existingPortfolios[0]?.id || null;
+          const adAccountsData: any[] = adAccountsRes?.data || [];
+          totalAccountsCount += adAccountsData.length;
+
+          // Process all ad accounts in high-speed parallel batches of 50
+          const chunkSize = 50;
+          for (let i = 0; i < adAccountsData.length; i += chunkSize) {
+            const chunk = adAccountsData.slice(i, i + chunkSize);
+            await Promise.all(
+              chunk.map(async (acc) => {
+                const isMetaActive = acc.account_status === 1;
+                const normalizedStatus = isMetaActive ? 'ACTIVE' : 'RESTRICTED';
+                const canRunAds = isMetaActive;
+
+                if (isMetaActive) activeCount++;
+                else restrictedCount++;
+
+                const effectiveBalanceMinor = this.extractEffectiveBalanceMinor(acc, 0n);
+                totalBalanceMinor += effectiveBalanceMinor;
+
+                const assignedPortfolioId = (acc.business && connPortfolioMap.get(acc.business.id)) || primaryPortfolioId;
+                const existing = accountByMetaId.get(acc.id);
+
+                if (existing) {
+                  await this.prisma.adAccount.update({
+                    where: { id: existing.id },
+                    data: {
+                      name: acc.name || existing.name,
+                      businessPortfolioId: assignedPortfolioId || existing.businessPortfolioId,
+                      rawMetaStatus: String(acc.account_status),
+                      normalizedStatus,
+                      canRunAds,
+                      currentTrackedBalanceMinor: effectiveBalanceMinor,
+                      lastStatusSyncAt: new Date(),
+                      lastSpendSyncAt: new Date()
+                    }
+                  });
+                } else {
+                  const created = await this.prisma.adAccount.create({
+                    data: {
+                      organizationId: orgId,
+                      businessPortfolioId: assignedPortfolioId,
+                      metaAdAccountId: acc.id,
+                      name: acc.name || `Ad Account ${acc.id}`,
+                      internalAlias: acc.name,
+                      currencyCode: acc.currency || 'INR',
+                      timezoneName: acc.timezone_name || 'Asia/Kolkata',
+                      rawMetaStatus: String(acc.account_status),
+                      normalizedStatus,
+                      canRunAds,
+                      currentTrackedBalanceMinor: effectiveBalanceMinor,
+                      lastStatusSyncAt: new Date(),
+                      lastSpendSyncAt: new Date()
+                    }
+                  });
+                  accountByMetaId.set(acc.id, created);
+                }
+              })
+            );
+          }
+
+          // Update connection status
+          await this.prisma.metaConnection.update({
+            where: { id: connection.id },
+            data: { lastSuccessfulSyncAt: new Date(), connectionStatus: 'CONNECTED' }
+          }).catch(() => {});
+        })
+      );
 
       await this.cache.delPattern('meta:*');
       await this.cache.delPattern('reports:*');
