@@ -5,6 +5,7 @@ build/
 .env.local
 .env.*.local
 .env*
+!.env.example
 *.log
 .*.log
 .tmp*
